@@ -1,18 +1,14 @@
 # FlashForge HTTP API Documentation
 
-
 ## Overview
 
-After firmware 3.1.3 on the 5M / Pro, FlashForge added a new API over HTTP, operating on port 8898 by default. 
+This document outlines the HTTP-based API for FlashForge 3D printers, introduced in firmware version 3.1.3 for the Adventurer 5M/Pro series. This API operates on port `8898` by default.
 
-Adventurer 5M/Pro models running firmware 3.1.3+ are still compatible with the "legacy" TCP API, for FlashPrint compatibility. 
-
-This allows you to utilize new features introduced in the HTTP API, while still having access to direct G/M code commands, for things such as homing the printer.
-
+Adventurer 5M/Pro models running firmware 3.1.3 and later maintain compatibility with the "legacy" TCP API, primarily for FlashPrint software compatibility. This dual compatibility allows users to leverage the new features of the HTTP API while retaining access to direct G/M code commands (e.g., for homing the printer) via the TCP API.
 
 ## Authentication
 
-Authentication is required for all endpoints. The authentication details are included in the request payload for most endpoints:
+Authentication is required for all HTTP API endpoints. For most endpoints, authentication details are included in the JSON request payload:
 
 ```json
 {
@@ -20,22 +16,23 @@ Authentication is required for all endpoints. The authentication details are inc
   "checkCode": "YOUR_CHECK_CODE"
 }
 ```
+**Note:** For the `/uploadGcode` endpoint, authentication details (`serialNumber` and `checkCode`) are transmitted via request headers instead of a JSON payload.
 
 ## Base URL
 
-All endpoints are accessed through the base URL:
+All API endpoints are accessed using the following base URL structure:
 
-```
-http://{printer-ip}:port (8898 by default)
-```
+`http://{printer_ip}:{port}`
+
+The default port is `8898`.
 
 ## Endpoints
 
 ### `/detail` - Get Printer Details
 
-Returns detailed information about the printer's current state, temperature, print job progress, etc.
+Retrieves comprehensive information about the printer's current status, including temperatures, print job progress, and other operational data.
 
-**Method:** POST
+**Method:** `POST`
 
 **Request Payload:**
 ```json
@@ -51,33 +48,33 @@ Returns detailed information about the printer's current state, temperature, pri
   "code": 0,
   "message": "Success",
   "detail": {
-    "autoShutdown": "open",
-    "autoShutdownTime": 30,
+    "autoShutdown": "open",        // "open" or "close"
+    "autoShutdownTime": 30,        // Minutes
     "cameraStreamUrl": "http://192.168.1.123:8080/stream",
-    "chamberFanSpeed": 100,
-    "chamberTargetTemp": 0,
-    "chamberTemp": 45,
-    "coolingFanSpeed": 100,
-    "cumulativeFilament": 120.5,
-    "cumulativePrintTime": 1234,
-    "currentPrintSpeed": 100,
-    "doorStatus": "close",
+    "chamberFanSpeed": 100,        // Percentage
+    "chamberTargetTemp": 0,        // Celsius
+    "chamberTemp": 45,             // Celsius
+    "coolingFanSpeed": 100,        // Percentage
+    "cumulativeFilament": 120.5,   // Meters
+    "cumulativePrintTime": 1234,   // Seconds
+    "currentPrintSpeed": 100,      // Percentage
+    "doorStatus": "close",         // "open" or "close"
     "errorCode": "",
-    "estimatedLeftLen": 0,
-    "estimatedLeftWeight": 0,
-    "estimatedRightLen": 12500,
-    "estimatedRightWeight": 35.5,
-    "estimatedTime": 3600,
-    "externalFanStatus": "open",
-    "fillAmount": 20,
+    "estimatedLeftLen": 0,         // Millimeters
+    "estimatedLeftWeight": 0,      // Grams
+    "estimatedRightLen": 12500,    // Millimeters
+    "estimatedRightWeight": 35.5,  // Grams
+    "estimatedTime": 3600,         // Seconds
+    "externalFanStatus": "open",   // "open" or "close"
+    "fillAmount": 20,              // Percentage
     "firmwareVersion": "v3.1.3",
     "flashRegisterCode": "ABCDEFGH",
-    "internalFanStatus": "open",
+    "internalFanStatus": "open",   // "open" or "close"
     "ipAddr": "192.168.1.123",
     "leftFilamentType": "",
-    "leftTargetTemp": 0,
-    "leftTemp": 0,
-    "lightStatus": "open",
+    "leftTargetTemp": 0,           // Celsius
+    "leftTemp": 0,                 // Celsius
+    "lightStatus": "open",         // "open" or "close"
     "location": "Office",
     "macAddr": "00:11:22:33:44:55",
     "name": "CustomPrinterName",
@@ -85,32 +82,32 @@ Returns detailed information about the printer's current state, temperature, pri
     "nozzleModel": "0.4mm",
     "nozzleStyle": 1,
     "pid": 123,
-    "platTargetTemp": 60,
-    "platTemp": 58,
+    "platTargetTemp": 60,          // Celsius
+    "platTemp": 58,                // Celsius
     "polarRegisterCode": "IJKLMNOP",
-    "printDuration": 1800,
+    "printDuration": 1800,         // Seconds
     "printFileName": "Benchy.gcode",
     "printFileThumbUrl": "http://192.168.1.123:8898/thumb/Benchy.gcode",
     "printLayer": 50,
-    "printProgress": 0.45,
-    "printSpeedAdjust": 100,
-    "remainingDiskSpace": 1024,
+    "printProgress": 0.45,         // Ratio (0.0 - 1.0)
+    "printSpeedAdjust": 100,       // Percentage
+    "remainingDiskSpace": 1024,    // Megabytes
     "rightFilamentType": "PLA",
-    "rightTargetTemp": 210,
-    "rightTemp": 209,
-    "status": "printing",
+    "rightTargetTemp": 210,        // Celsius
+    "rightTemp": 209,              // Celsius
+    "status": "printing",          // See "Machine States" table
     "targetPrintLayer": 100,
-    "tvoc": 0,
-    "zAxisCompensation": 0
+    "tvoc": 0,                     // Total Volatile Organic Compounds
+    "zAxisCompensation": 0         // Millimeters
   }
 }
 ```
 
-### `/product` - Control Product Features
+### `/product` - Get Product Feature Availability
 
-Retrieve availability of the printer's control states such as LEDs and fans.
+Retrieves the availability status of various controllable printer features, such as LEDs and fans.
 
-**Method:** POST
+**Method:** `POST`
 
 **Request Payload:**
 ```json
@@ -126,21 +123,22 @@ Retrieve availability of the printer's control states such as LEDs and fans.
   "code": 0,
   "message": "Success",
   "product": {
-    "chamberTempCtrlState": 0, - not available
-    "externalFanCtrlState": 1, - available 
-    "internalFanCtrlState": 1, - available
-    "lightCtrlState": 1, - available
-    "nozzleTempCtrlState": 1, - available
-    "platformTempCtrlState": 1, - available
+    "chamberTempCtrlState": 0,     // 0: Not available/controllable, 1: Available/controllable
+    "externalFanCtrlState": 1,     // 0: Not available/controllable, 1: Available/controllable
+    "internalFanCtrlState": 1,     // 0: Not available/controllable, 1: Available/controllable
+    "lightCtrlState": 1,           // 0: Not available/controllable, 1: Available/controllable
+    "nozzleTempCtrlState": 1,      // 0: Not available/controllable, 1: Available/controllable
+    "platformTempCtrlState": 1     // 0: Not available/controllable, 1: Available/controllable
   }
 }
 ```
+*Note: In the `product` object, a value of `0` indicates the feature is not available or not controllable, while `1` indicates it is available and controllable.*
 
 ### `/control` - Send Control Commands
 
-This is the base endpoint for all control commands
+This endpoint serves as the base for sending various control commands to the printer.
 
-**Method:** POST
+**Method:** `POST`
 
 **Request Payload Format:**
 ```json
@@ -148,19 +146,19 @@ This is the base endpoint for all control commands
   "serialNumber": "YOUR_SERIAL_NUMBER",
   "checkCode": "YOUR_CHECK_CODE",
   "payload": {
-    "cmd": "COMMAND_NAME",
+    "cmd": "COMMAND_NAME", // Specific command to execute
     "args": {
-      // Command-specific arguments
+      // Command-specific arguments go here
     }
   }
 }
 ```
 
-#### Available Commands:
+#### Available Commands
 
 ##### Light Control (`lightControl_cmd`)
 
-Controls the printer's LED lights.
+Controls the printer's internal LED lighting.
 
 **Request Payload Example:**
 ```json
@@ -170,7 +168,7 @@ Controls the printer's LED lights.
   "payload": {
     "cmd": "lightControl_cmd",
     "args": {
-      "status": "open"  // or "close" to turn off
+      "status": "open"  // "open" to turn on, "close" to turn off
     }
   }
 }
@@ -178,7 +176,7 @@ Controls the printer's LED lights.
 
 ##### Printer Control (`printerCtl_cmd`)
 
-Adjusts various printer settings during printing.
+Adjusts various printer settings, often during an active print.
 
 **Request Payload Example:**
 ```json
@@ -188,11 +186,11 @@ Adjusts various printer settings during printing.
   "payload": {
     "cmd": "printerCtl_cmd",
     "args": {
-      "zAxisCompensation": 0.1, - this is not the actual format
-      "speed": 100, - 0 - 100 print speed override
-      "chamberFan": 100, 0 - 100 fan speed overrides
-      "coolingFan": 100,
-      "coolingLeftFan": 0
+      "zAxisCompensation": 0.1, // Note: The exact structure for zAxisCompensation requires confirmation. The provided example illustrates its purpose.
+      "speed": 100,             // Print speed override (percentage, e.g., 0-100)
+      "chamberFan": 100,        // Chamber fan speed (percentage, e.g., 0-100)
+      "coolingFan": 100,        // Main cooling fan speed (percentage, e.g., 0-100)
+      "coolingLeftFan": 0       // Left cooling fan speed (percentage, e.g., 0-100, if applicable)
     }
   }
 }
@@ -200,7 +198,7 @@ Adjusts various printer settings during printing.
 
 ##### Job Control (`jobCtl_cmd`)
 
-Controls the current print job.
+Manages the current print job (e.g., pause, resume, cancel).
 
 **Request Payload Example:**
 ```json
@@ -210,8 +208,8 @@ Controls the current print job.
   "payload": {
     "cmd": "jobCtl_cmd",
     "args": {
-      "jobID": "",
-      "action": "pause"  // Other values: "continue", "cancel"
+      "jobID": "",       // Typically empty, but may be used in future firmware
+      "action": "pause"  // Possible values: "pause", "continue", "cancel"
     }
   }
 }
@@ -219,7 +217,7 @@ Controls the current print job.
 
 ##### Circulation Control (`circulateCtl_cmd`)
 
-Controls the printer's filtration/circulation fans.
+Controls the printer's internal and external air circulation/filtration fans.
 
 **Request Payload Example:**
 ```json
@@ -229,8 +227,8 @@ Controls the printer's filtration/circulation fans.
   "payload": {
     "cmd": "circulateCtl_cmd",
     "args": {
-      "internal": "open",  // or "close"
-      "external": "open"   // or "close"
+      "internal": "open",  // "open" to turn on, "close" to turn off
+      "external": "open"   // "open" to turn on, "close" to turn off
     }
   }
 }
@@ -238,7 +236,7 @@ Controls the printer's filtration/circulation fans.
 
 ##### Camera Control (`streamCtrl_cmd`)
 
-Controls the printer's camera (Pro models only).
+Controls the printer's integrated camera stream (primarily for Pro models or models with camera add-ons).
 
 **Request Payload Example:**
 ```json
@@ -248,7 +246,7 @@ Controls the printer's camera (Pro models only).
   "payload": {
     "cmd": "streamCtrl_cmd",
     "args": {
-      "action": "open"  // or "close"
+      "action": "open"  // "open" to start stream, "close" to stop stream
     }
   }
 }
@@ -256,7 +254,7 @@ Controls the printer's camera (Pro models only).
 
 ##### Platform Clear Command (`stateCtrl_cmd`)
 
-Clears the platform after a print is complete. This allows for various control normally blocked after a finished print, including starting a new job (not that it would be a good idea..).
+Clears the printer's "completed print" state, allowing further operations that might otherwise be blocked. This allows for initiating subsequent operations, though caution is advised when starting new print jobs without manual checks.
 
 **Request Payload Example:**
 ```json
@@ -266,13 +264,13 @@ Clears the platform after a print is complete. This allows for various control n
   "payload": {
     "cmd": "stateCtrl_cmd",
     "args": {
-      "action": "setClearPlatform"
+      "action": "setClearPlatform" // Sets the platform state to clear
     }
   }
 }
 ```
 
-**Response Example (for all control commands):**
+**Response Example (for all `/control` commands):**
 ```json
 {
   "code": 0,
@@ -280,11 +278,11 @@ Clears the platform after a print is complete. This allows for various control n
 }
 ```
 
-### `/gcodeList` - Get Recent Files
+### `/gcodeList` - Get Recent G-code Files
 
-Retrieves a list of 10 most recently used files on the printer.
+Retrieves a list of the 10 most recently used G-code files stored on the printer.
 
-**Method:** POST
+**Method:** `POST`
 
 **Request Payload:**
 ```json
@@ -303,22 +301,23 @@ Retrieves a list of 10 most recently used files on the printer.
     "Benchy.gcode",
     "CalibrationCube.gcode",
     "Vase.gcode"
+    // ... up to 10 files
   ]
 }
 ```
 
-### `/gcodeThumb` - Get File Thumbnail
+### `/gcodeThumb` - Get G-code File Thumbnail
 
-Retrieves a thumbnail image for a specific file.
+Retrieves a thumbnail image associated with a specific G-code file stored on the printer.
 
-**Method:** POST
+**Method:** `POST`
 
 **Request Payload:**
 ```json
 {
   "serialNumber": "YOUR_SERIAL_NUMBER",
   "checkCode": "YOUR_CHECK_CODE",
-  "fileName": "Benchy.gcode"
+  "fileName": "Benchy.gcode" // Name of the file to get thumbnail for
 }
 ```
 
@@ -327,15 +326,15 @@ Retrieves a thumbnail image for a specific file.
 {
   "code": 0,
   "message": "Success",
-  "imageData": "BASE64_ENCODED_IMAGE_DATA"
+  "imageData": "BASE64_ENCODED_IMAGE_DATA" // Base64 encoded image string
 }
 ```
 
-### `/printGcode` - Print a Local File
+### `/printGcode` - Print a Local G-code File
 
-Starts printing a file that already exists on the printer.
+Initiates a print job for a G-code file that already exists on the printer's local storage.
 
-**Method:** POST
+**Method:** `POST`
 
 **Request Payload (Firmware < 3.1.3):**
 ```json
@@ -343,7 +342,7 @@ Starts printing a file that already exists on the printer.
   "serialNumber": "YOUR_SERIAL_NUMBER",
   "checkCode": "YOUR_CHECK_CODE",
   "fileName": "Benchy.gcode",
-  "levelingBeforePrint": true
+  "levelingBeforePrint": true // Whether to perform auto-leveling before printing
 }
 ```
 
@@ -353,44 +352,57 @@ Starts printing a file that already exists on the printer.
   "serialNumber": "YOUR_SERIAL_NUMBER",
   "checkCode": "YOUR_CHECK_CODE",
   "fileName": "Benchy.gcode",
-  "levelingBeforePrint": true,
-  "flowCalibration": false, -  not tested 
-  "useMatlStation": false, - AD5X specific
-  "gcodeToolCnt": 0, - Not sure.
-  "materialMappings": [] - AD5X specific
+  "levelingBeforePrint": true,    // Whether to perform auto-leveling before printing
+  "flowCalibration": false,     // The `flowCalibration` parameter's behavior is currently unverified.
+  "useMatlStation": false,      // The `useMatlStation` parameter is specific to AD5X series printers.
+  "gcodeToolCnt": 0,            // The purpose of the `gcodeToolCnt` parameter is currently undetermined.
+  "materialMappings": []        // The `materialMappings` parameter is specific to AD5X series printers.
 }
 ```
 
+**Response Example (for both firmware versions):**
+```json
+{
+  "code": 0,
+  "message": "Success"
+}
+```
 
-### `/uploadGcode` - Upload and Print a File
+### `/uploadGcode` - Upload and Optionally Print G-code File
 
-Uploads a file to the printer and optionally starts printing it.
+Uploads a G-code file to the printer and can optionally start printing it immediately.
+This endpoint uses `multipart/form-data` for the request body.
 
-**Method:** POST
+**Method:** `POST`
 
 **Headers:**
-```
-serialNumber: YOUR_SERIAL_NUMBER
-checkCode: YOUR_CHECK_CODE
-fileSize: FILE_SIZE_IN_BYTES
-printNow: true
-levelingBeforePrint: true
-Expect: 100-continue
-Content-Type: multipart/form-data
-```
+*   `serialNumber`: `YOUR_SERIAL_NUMBER`
+*   `checkCode`: `YOUR_CHECK_CODE`
+*   `fileSize`: `FILE_SIZE_IN_BYTES` (Total size of the G-code file)
+*   `printNow`: `true` or `false` (Whether to start printing immediately after upload)
+*   `levelingBeforePrint`: `true` or `false` (Whether to perform auto-leveling before printing if `printNow` is true)
+*   `Expect`: `100-continue`
+*   `Content-Type`: `multipart/form-data; boundary=----WebKitFormBoundary...` (Ensure a proper boundary is set)
 
-**Additional Headers for Firmware >= 3.1.3:**
-
-These are not used on the standard 5M/Pro to my knowledge, only the AD5X.
-```
-flowCalibration: false
-useMatlStation: false
-gcodeToolCnt: 0
-materialMappings: W10=  // Base64 encoded "[]"
-```
+**Additional Headers (Firmware >= 3.1.3):**
+These additional headers are typically relevant for AD5X series printers.
+*   `flowCalibration`: `false` (Behavior unverified)
+*   `useMatlStation`: `false` (AD5X specific)
+*   `gcodeToolCnt`: `0` (Purpose undetermined)
+*   `materialMappings`: `W10=` (Represents material mappings, typically a Base64 encoded JSON array. `W10=` is the Base64 encoding of `[]`. Relevant for AD5X series.)
 
 **Request Body:**
-The file content sent as form data with key `gcodeFile`.
+The G-code file content sent as form data. The form field name for the file should be `gcodeFile`.
+
+**Example (conceptual form data structure):**
+```
+------WebKitFormBoundary...
+Content-Disposition: form-data; name="gcodeFile"; filename="Benchy.gcode"
+Content-Type: application/octet-stream
+
+(binary content of Benchy.gcode)
+------WebKitFormBoundary...--
+```
 
 **Response Example:**
 ```json
@@ -400,36 +412,44 @@ The file content sent as form data with key `gcodeFile`.
 }
 ```
 
+## General Considerations
+
+*   The default HTTP port for this API is `8898`.
+*   For requests with a JSON payload, ensure the `Content-Type: application/json` header is correctly set.
+*   The `/uploadGcode` endpoint is an exception and uses `Content-Type: multipart/form-data`.
+
 ## Error Handling
 
-All API responses include a `code` and `message` field. A successful response will have a code of `0` and a message of `"Success"`. Error responses will have a non-zero code and an error message.
+All API responses consistently include a `code` field and a `message` field to indicate the outcome of the request.
+*   A `code` of `0` signifies a successful operation, typically accompanied by a `message` of `"Success"`.
+*   A non-zero `code` indicates an error, with the `message` field providing a description of the error.
 
 ## Response Codes
 
-| Code | Message | Description |
-|------|---------|-------------|
-| 0    | Success | Operation completed successfully |
-| 1    | Error   | Generic error |
-| 2    | Invalid parameter | The request contains invalid parameters |
-| 3    | Unauthorized | Authentication failed |
-| 4    | Not found | Requested resource not found |
-| 5    | Busy | Printer is busy with another operation |
+The following table lists common response codes:
+
+| Code | Message           | Description                                     |
+|------|-------------------|-------------------------------------------------|
+| 0    | Success           | Operation completed successfully.               |
+| 1    | Error             | A generic error occurred.                       |
+| 2    | Invalid parameter | The request payload contains invalid parameters.  |
+| 3    | Unauthorized      | Authentication failed (invalid serial or check code). |
+| 4    | Not found         | The requested resource or file was not found.   |
+| 5    | Busy              | The printer is currently busy with another operation. |
 
 ## Machine States
 
-The printer's status is represented by one of the following states:
+The printer's operational status is indicated by the `status` field in the `/detail` endpoint response. Possible states include:
 
-| Status | Description |
-|--------|-------------|
-| ready | Printer is idle and ready for commands |
-| busy | Printer is performing a non-printing operation |
-| calibrate_doing | Printer is calibrating |
-| error | An error has occurred |
-| heating | Printer is heating up |
-| printing | Printer is actively printing |
-| pausing | Print job is in the process of pausing |
-| paused | Print job is paused |
-| cancel | Print job has been canceled |
-| completed | Print job has completed successfully |
-
-
+| Status          | Description                                           |
+|-----------------|-------------------------------------------------------|
+| ready           | Printer is idle and ready to accept commands.         |
+| busy            | Printer is performing a non-printing operation (e.g., homing). |
+| calibrate_doing | Printer is currently performing a calibration sequence. |
+| error           | An error has occurred on the printer.                 |
+| heating         | Printer is heating its nozzle or platform.            |
+| printing        | Printer is actively printing a G-code file.           |
+| pausing         | Print job is in the process of pausing.               |
+| paused          | Print job is currently paused.                        |
+| cancel          | Print job has been canceled by the user or system.    |
+| completed       | Print job has finished successfully.                  |
