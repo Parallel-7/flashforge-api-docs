@@ -8,12 +8,12 @@ The information in this document has been compiled from various sources, includi
 
 | Printer             | Coverage Status                                                                 |
 |---------------------|---------------------------------------------------------------------------------|
-| Adventurer 5M/Pro   | Fully tested by document authors.                                               |
+| Adventurer 5M/Pro   | Fully tested for this documentation.                                            |
 | Adventurer 4 Series | Partially tested; functionality largely confirmed by existing API knowledge.    |
 | Adventurer 3 Series | Functionality reported by users or inferred from other API implementations.     |
 | Finder Series       | Functionality reported by users or inferred from other API implementations.     |
 
-*Note: "Functionality reported by users or inferred" means the commands are expected to work based on community feedback or similarities with other FlashForge APIs, but may not have been directly tested on that specific model by the document authors.*
+*Note: "Functionality reported by users or inferred" means the commands are expected to work based on community feedback or similarities with other FlashForge APIs, but may not have been directly tested on that specific model during the compilation of this documentation.*
 
 ## Initial Connection
 
