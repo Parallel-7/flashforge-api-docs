@@ -123,16 +123,16 @@ Retrieves the availability status of various controllable printer features, such
   "code": 0,
   "message": "Success",
   "product": {
-    "chamberTempCtrlState": 0,     // 0: Not available/controllable, 1: Available/controllable
-    "externalFanCtrlState": 1,     // 0: Not available/controllable, 1: Available/controllable
-    "internalFanCtrlState": 1,     // 0: Not available/controllable, 1: Available/controllable
-    "lightCtrlState": 1,           // 0: Not available/controllable, 1: Available/controllable
-    "nozzleTempCtrlState": 1,      // 0: Not available/controllable, 1: Available/controllable
-    "platformTempCtrlState": 1     // 0: Not available/controllable, 1: Available/controllable
+    "chamberTempCtrlState": 0,
+    "externalFanCtrlState": 1,
+    "internalFanCtrlState": 1,
+    "lightCtrlState": 1,
+    "nozzleTempCtrlState": 1,
+    "platformTempCtrlState": 1
   }
 }
 ```
-*Note: In the `product` object, a value of `0` indicates the feature is not available or not controllable, while `1` indicates it is available and controllable.*
+*Note: A value of `0` indicates the feature is not available or not controllable, while `1` indicates it is.*
 
 ### `/control` - Send Control Commands
 
@@ -186,7 +186,7 @@ Adjusts various printer settings, often during an active print.
   "payload": {
     "cmd": "printerCtl_cmd",
     "args": {
-      "zAxisCompensation": 0.1, // Note: The exact structure for zAxisCompensation requires confirmation. The provided example illustrates its purpose.
+      "zAxisCompensation": 0.1, // Note: The exact structure for zAxisCompensation requires confirmation.
       "speed": 100,             // Print speed override (percentage, e.g., 0-100)
       "chamberFan": 100,        // Chamber fan speed (percentage, e.g., 0-100)
       "coolingFan": 100,        // Main cooling fan speed (percentage, e.g., 0-100)
@@ -208,7 +208,7 @@ Manages the current print job (e.g., pause, resume, cancel).
   "payload": {
     "cmd": "jobCtl_cmd",
     "args": {
-      "jobID": "",       // Typically empty, but may be used in future firmware
+      "jobID": "",       // Typically empty, but may be used in future firmware or in cloud services
       "action": "pause"  // Possible values: "pause", "continue", "cancel"
     }
   }
@@ -254,7 +254,7 @@ Controls the printer's integrated camera stream (primarily for Pro models or mod
 
 ##### Platform Clear Command (`stateCtrl_cmd`)
 
-Clears the printer's "completed print" state, allowing further operations that might otherwise be blocked. This allows for initiating subsequent operations, though caution is advised when starting new print jobs without manual checks.
+Clears the printer's "completed print" state, allowing further operations that might otherwise be blocked. This allows for initiating subsequent operations after finishing a print, without manually clearning the dialog.
 
 **Request Payload Example:**
 ```json
@@ -264,7 +264,7 @@ Clears the printer's "completed print" state, allowing further operations that m
   "payload": {
     "cmd": "stateCtrl_cmd",
     "args": {
-      "action": "setClearPlatform" // Sets the platform state to clear
+      "action": "setClearPlatform" // Reset the printer to a "ready" state
     }
   }
 }
@@ -306,9 +306,9 @@ Retrieves a list of the 10 most recently used G-code files stored on the printer
 }
 ```
 
-### `/gcodeThumb` - Get G-code File Thumbnail
+### `/gcodeThumb` - Get Local File Thumbnail
 
-Retrieves a thumbnail image associated with a specific G-code file stored on the printer.
+Retrieves a thumbnail image associated with a specific file stored on the printer.
 
 **Method:** `POST`
 
@@ -330,9 +330,9 @@ Retrieves a thumbnail image associated with a specific G-code file stored on the
 }
 ```
 
-### `/printGcode` - Print a Local G-code File
+### `/printGcode` - Print a Local File
 
-Initiates a print job for a G-code file that already exists on the printer's local storage.
+Initiates a print job for a file that already exists on the printer's local storage.
 
 **Method:** `POST`
 
@@ -368,9 +368,9 @@ Initiates a print job for a G-code file that already exists on the printer's loc
 }
 ```
 
-### `/uploadGcode` - Upload and Optionally Print G-code File
+### `/uploadGcode` - Upload and Optionally Print File
 
-Uploads a G-code file to the printer and can optionally start printing it immediately.
+Uploads a file to the printer and can optionally start printing it immediately.
 This endpoint uses `multipart/form-data` for the request body.
 
 **Method:** `POST`
@@ -378,7 +378,7 @@ This endpoint uses `multipart/form-data` for the request body.
 **Headers:**
 *   `serialNumber`: `YOUR_SERIAL_NUMBER`
 *   `checkCode`: `YOUR_CHECK_CODE`
-*   `fileSize`: `FILE_SIZE_IN_BYTES` (Total size of the G-code file)
+*   `fileSize`: `FILE_SIZE_IN_BYTES` (Total size of the file)
 *   `printNow`: `true` or `false` (Whether to start printing immediately after upload)
 *   `levelingBeforePrint`: `true` or `false` (Whether to perform auto-leveling before printing if `printNow` is true)
 *   `Expect`: `100-continue`
@@ -392,7 +392,7 @@ These additional headers are typically relevant for AD5X series printers.
 *   `materialMappings`: `W10=` (Represents material mappings, typically a Base64 encoded JSON array. `W10=` is the Base64 encoding of `[]`. Relevant for AD5X series.)
 
 **Request Body:**
-The G-code file content sent as form data. The form field name for the file should be `gcodeFile`.
+The file content sent as form data. The form field name for the file should be `gcodeFile`. 3MF files *are* accepted.
 
 **Example (conceptual form data structure):**
 ```
@@ -421,12 +421,12 @@ Content-Type: application/octet-stream
 ## Error Handling
 
 All API responses consistently include a `code` field and a `message` field to indicate the outcome of the request.
-*   A `code` of `0` signifies a successful operation, typically accompanied by a `message` of `"Success"`.
+*   A `code` of `0` signifies a successful operation, accompanied by a `message` of `"Success"`.
 *   A non-zero `code` indicates an error, with the `message` field providing a description of the error.
 
 ## Response Codes
 
-The following table lists common response codes:
+Known response codes:
 
 | Code | Message           | Description                                     |
 |------|-------------------|-------------------------------------------------|
@@ -439,7 +439,7 @@ The following table lists common response codes:
 
 ## Machine States
 
-The printer's operational status is indicated by the `status` field in the `/detail` endpoint response. Possible states include:
+The printer's operational status is indicated by the `status` field in the `/detail` endpoint response. Known printer states:
 
 | Status          | Description                                           |
 |-----------------|-------------------------------------------------------|

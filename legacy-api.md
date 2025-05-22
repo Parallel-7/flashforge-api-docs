@@ -1,10 +1,9 @@
 # FlashForge Legacy TCP API Documentation
 
-This document describes the legacy TCP-based API, primarily used by FlashForge printer models released before the Adventurer 5 series. Some newer models may retain compatibility for specific functionalities or for backward compatibility with software like FlashPrint.
+This document describes the legacy TCP-based API, used by FlashForge printer models released before the Adventurer 5 series. Newer models retain compatibility for specific functionalities, or for backward compatibility with software like FlashPrint.
 
 ## Printer Model Coverage
 
-The information in this document has been compiled from various sources, including direct testing and community reports.
 
 | Printer             | Coverage Status                                                                 |
 |---------------------|---------------------------------------------------------------------------------|
@@ -73,7 +72,6 @@ SD printing byte 0/100
 Layer: 0/0
 ok
 ```
-*Note: The `byte 0/100` typically represents the percentage of the print job completed.*
 
 ### `M105` - Get Extruder and Bed Temperatures
 
@@ -120,13 +118,13 @@ ok
 
 **Response Components:**
 *   **`Endstop`**: Indicates the state of the X, Y, and Z endstops.
-*   **`MachineStatus`**: The overall state of the printer. Common states include:
+*   **`MachineStatus`**: The overall state of the printer. Known states:
     *   `BUILDING_FROM_SD`
     *   `BUILDING_COMPLETED`
     *   `PAUSED`
     *   `READY`
     *   `BUSY`
-*   **`MoveMode`**: The current movement state of the printer. Common modes include:
+*   **`MoveMode`**: The current movement state of the printer. Known modes:
     *   `MOVING`
     *   `PAUSED`
     *   `READY`
@@ -195,7 +193,7 @@ These commands are used to control various printer operations, such as starting 
 **Command:**
 `G28`
 
-**Response (typically):**
+**Response:**
 ```
 CMD G28 Received.
 ok
@@ -203,17 +201,12 @@ ok
 
 ### `M112` - Emergency Stop
 
-**Description:** Intended to halt all printer activity immediately.
-The effectiveness and compatibility of the `M112` command can vary between printer models and firmware versions. It was found to be non-operational on an Adventurer 5M Pro during testing.
+**Description:** Halt all printer activity immediately.
+Compatibility of the `M112` command can vary between printer models and firmware versions. Does not work on the Adventurer 5M series.
 
 **Command:**
 `M112`
 
-**Response (if acknowledged):**
-```
-CMD M112 Received.
-ok
-```
 
 ### `M23` - Start Print Job
 
@@ -226,7 +219,7 @@ ok
 **Example Request:**
 `M23 0:/user/Benchy.gcode`
 
-**Response (typically):**
+**Response:**
 ```
 CMD M23 Received.
 ok
@@ -240,17 +233,8 @@ These commands are used to manage an active print job.
 *   **`M25` - Pause Print:** Pauses the current print job.
 *   **`M26` - Stop Print:** Stops the current print job.
 
-**Example Usage:**
-`M25` (to pause)
-
-**Typical Response for all job control commands:**
-```
-CMD M2X Received. // Where X is 4, 5, or 6
-ok
-```
-
 > #### Important Note on Job Stoppage
-> Once a print job is stopped using the `M26` command via the TCP API, the printer may enter a state where it requires manual intervention on the printer's interface (e.g., clearing the completed/stopped job notification) before a new print job can be started or certain other control commands can be effectively issued.
+> Once a print job is stopped using the `M26` command via the TCP API, the printer will not be controllable until the cancelled job dialog is manually cleared from the printer.
 
 
 ### `M146` - LED Control
@@ -266,7 +250,7 @@ ok
 *   **LEDs ON (White):** `M146 r255 g255 b255 F0`
 *   **LEDs OFF:** `M146 r0 g0 b0 F0`
 
-**Response (typically):**
+**Response:**
 ```
 CMD M146 Received.
 ok
@@ -285,7 +269,7 @@ ok
 *   Set extruder to 210°C: `M104 S210`
 *   Turn off extruder heating: `M104 S0`
 
-**Response (typically):**
+**Response:**
 ```
 CMD M104 Received.
 ok
@@ -304,7 +288,7 @@ ok
 *   Set bed to 60°C: `M140 S60`
 *   Turn off bed heating: `M140 S0`
 
-**Response (typically):**
+**Response:**
 ```
 CMD M140 Received.
 ok
