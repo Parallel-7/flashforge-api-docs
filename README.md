@@ -1,31 +1,55 @@
+<div align="center">
+
 # FlashForge API Documentation
 
-Welcome to the Unofficial FlashForge API Documentation! This is a community-driven effort to document the various APIs used by FlashForge 3D printers.
+### Unofficial Community-Driven Documentation for FlashForge 3D Printer APIs
 
-FlashForge printers primarily utilize two distinct types of APIs:
+A comprehensive resource for developers integrating with FlashForge 3D printers across multiple generations and protocols.
 
-*   A **"Legacy" TCP-based API**: Common in older models and still present in newer ones.
-*   A newer **HTTP-based API**: Introduced with more recent printer series, offering a more modern interface.
+This documentation is compiled from network traffic analysis, publicly available source code, and extensive community testing across various printer models.
 
-This documentation is compiled from observing network traffic, analyzing publicly available source code, and community testing.
+---
 
-## "Legacy" TCP API
+## API Types
 
-Used by older FlashForge printer models and still available on newer models for specific functionalities or backward compatibility. This API generally involves sending specific text-based commands over a TCP connection.
+### Legacy TCP API
 
-More details can be found in the [Legacy TCP API Documentation](legacy-api.md).
+The original text-based command protocol used across FlashForge's printer lineup. This API remains available on newer models for backward compatibility and specific control functions. Commands are sent over TCP connections using a text-based structure, supporting both older and newer printer generations.
 
-## HTTP API
+**[View Legacy TCP API Documentation →](legacy-api.md)**
 
-Introduced with newer models like the Adventurer 5 Series, offering a more modern, feature-rich interface. This API typically uses standard HTTP methods (GET, POST, etc.) and JSON for data exchange.
+### HTTP API
 
-More details can be found in the [HTTP API Documentation](http-api.md).
+A modern, RESTful interface introduced with recent printer series, offering enhanced functionality and developer-friendly JSON data exchange. Built on standard HTTP methods with JSON-based request and response formats, this API provides feature-rich control with native support on Adventurer 5 Series and newer models.
+
+**[View HTTP API Documentation →](http-api.md)**
+
+---
+
+## Supported Printer Models
+
+**Adventurer 5X Series** | **Adventurer 5M/Pro Series**
+
+Fully tested with both HTTP and Legacy TCP support
+
+**Adventurer 3/4 Series**
+
+Partial support via Legacy TCP protocol
+
+---
 
 ## Contributing
 
-Here are some ways you can contribute:
+Community contributions are essential to maintaining accurate, comprehensive documentation.
 
-*   **Verify Information:** Test commands and endpoints against different FlashForge printer models and report your findings.
-*   **Add Missing Content:** If you've discovered undocumented endpoints, commands, or parameters, please share them.
-*   **Correct Inaccuracies:** Help us fix any errors or outdated information.
+Verify documented commands and endpoints against your printer model. Add discovered undocumented endpoints, commands, or parameters. Help identify and fix errors or outdated information. Contribute findings for untested or partially supported printer models.
 
+All contributions should be submitted via pull requests with clear documentation of testing methodology and printer model information.
+
+---
+
+**Built by the community, for the community**
+
+For implementation examples and reference applications, see [FlashForgeUI-Electron](https://github.com/Parallel-7/FlashForgeUI-Electron)
+
+</div>
