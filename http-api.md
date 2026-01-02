@@ -134,6 +134,8 @@ Retrieves the availability status of various controllable printer features, such
 ```
 *Note: A value of `0` indicates the feature is not available or not controllable, while `1` indicates it is.*
 
+> Even if `lightCtrlState` returns `0`, the `lightControl_cmd` (see below) often still functions correctly. This is particularly common with aftermarket LED installations.
+
 ### `/control` - Send Control Commands
 
 This endpoint serves as the base for sending various control commands to the printer.
@@ -159,6 +161,8 @@ This endpoint serves as the base for sending various control commands to the pri
 ##### Light Control (`lightControl_cmd`)
 
 Controls the printer's internal LED lighting.
+
+> This command will often work even if `lightCtrlState` in the `/product` response is `0` (e.g., with aftermarket LEDs).
 
 **Request Payload Example:**
 ```json
@@ -280,7 +284,7 @@ Clears the printer's "completed print" state, allowing further operations that m
 
 ### `/gcodeList` - Get Recent G-code Files
 
-Retrieves a list of the 10 most recently used G-code files stored on the printer.
+Retrieves a list of the 10 most recently used files stored on the printer.
 
 **Method:** `POST`
 
@@ -298,7 +302,7 @@ Retrieves a list of the 10 most recently used G-code files stored on the printer
   "code": 0,
   "message": "Success",
   "gcodeList": [
-    "Benchy.gcode",
+    "Benchy.3mf",
     "CalibrationCube.gcode",
     "Vase.gcode"
     // ... up to 10 files
@@ -308,7 +312,9 @@ Retrieves a list of the 10 most recently used G-code files stored on the printer
 
 ### `/gcodeThumb` - Get Local File Thumbnail
 
-Retrieves a thumbnail image associated with a specific file stored on the printer.
+Retrieves a thumbnail image associated with a specific file stored on the printer.<br>
+
+> **Note:** This endpoint is **not** available for AD5X printers. /gcodeList should be used instead.
 
 **Method:** `POST`
 
@@ -336,6 +342,8 @@ Initiates a print job for a file that already exists on the printer's local stor
 
 **Method:** `POST`
 
+> **WARNING:** This pattern is **LEGACY** and deprecated. Do not implement this unless you specifically require support for firmware versions older than 3.1.3.
+
 **Request Payload (Firmware < 3.1.3):**
 ```json
 {
@@ -353,12 +361,14 @@ Initiates a print job for a file that already exists on the printer's local stor
   "checkCode": "YOUR_CHECK_CODE",
   "fileName": "Benchy.gcode",
   "levelingBeforePrint": true,    // Whether to perform auto-leveling before printing
-  "flowCalibration": false,     // The `flowCalibration` parameter's behavior is currently unverified.
-  "useMatlStation": false,      // The `useMatlStation` parameter is specific to AD5X series printers.
-  "gcodeToolCnt": 0,            // The purpose of the `gcodeToolCnt` parameter is currently undetermined.
-  "materialMappings": []        // The `materialMappings` parameter is specific to AD5X series printers.
+  "flowCalibration": false,     // Required. Set to false for non-AD5X.
+  "useMatlStation": false,      // Required. Set to false for non-AD5X.
+  "gcodeToolCnt": 0,            // Required. Set to 0 for non-AD5X.
+  "materialMappings": []        // Required. Set to [] for non-AD5X.
 }
 ```
+
+> For detailed information on using these parameters with AD5X series printers, please refer to the [AD5X Workflow Documentation](ad5x-workflow.md).
 
 **Response Example (for both firmware versions):**
 ```json
@@ -381,15 +391,14 @@ This endpoint uses `multipart/form-data` for the request body.
 *   `fileSize`: `FILE_SIZE_IN_BYTES` (Total size of the file)
 *   `printNow`: `true` or `false` (Whether to start printing immediately after upload)
 *   `levelingBeforePrint`: `true` or `false` (Whether to perform auto-leveling before printing if `printNow` is true)
+*   `flowCalibration`: `false` (Required. Set to false for non-AD5X)
+*   `useMatlStation`: `false` (Required. Set to false for non-AD5X)
+*   `gcodeToolCnt`: `0` (Required. Set to 0 for non-AD5X)
+*   `materialMappings`: `[]` (Required. Set to [] for non-AD5X)
 *   `Expect`: `100-continue`
 *   `Content-Type`: `multipart/form-data; boundary=----WebKitFormBoundary...` (Ensure a proper boundary is set)
 
-**Additional Headers (Firmware >= 3.1.3):**
-These additional headers are typically relevant for AD5X series printers.
-*   `flowCalibration`: `false` (Behavior unverified)
-*   `useMatlStation`: `false` (AD5X specific)
-*   `gcodeToolCnt`: `0` (Purpose undetermined)
-*   `materialMappings`: `W10=` (Represents material mappings, typically a Base64 encoded JSON array. `W10=` is the Base64 encoding of `[]`. Relevant for AD5X series.)
+> For detailed information on using the AD5X-specific headers (`flowCalibration`, `useMatlStation`, etc.), please refer to the [AD5X Workflow Documentation](ad5x-workflow.md).
 
 **Request Body:**
 The file content sent as form data. The form field name for the file should be `gcodeFile`. 3MF files *are* accepted.
