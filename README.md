@@ -65,9 +65,8 @@ Machine-readable endpoint specifications are available in the [`endpoints/`](end
 
 This documentation is compiled from:
 
-- Reverse engineering of firmware binaries (Ghidra)
-- Network traffic analysis (Wireshark)
-- Extracted firmware filesystem analysis
+- Firmware analysis and filesystem inspection
+- Network traffic capture and protocol analysis
 - Community testing across multiple printer models and firmware versions
 
 ## Contributing
@@ -76,7 +75,7 @@ Contributions are welcome via pull requests. When submitting:
 
 - Specify the printer model and firmware version tested
 - Include methodology (traffic capture, binary analysis, live testing)
-- Reference specific firmware addresses or packet captures where possible
+- Reference specific protocol details or packet captures where possible
 
 ---
 
