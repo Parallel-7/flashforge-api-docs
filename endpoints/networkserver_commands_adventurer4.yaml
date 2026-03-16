@@ -1,0 +1,239 @@
+# FlashForge Adventurer 4 Pro NetworkServer Protocol
+# Firmware: 1.2.1-3.22
+# Port: 8899 (TCP)
+# Protocol: TCP Socket with line-based ASCII commands (G-code/M-code)
+
+description: >-
+  This file documents the proprietary and standard G-code/M-code commands supported by the
+  NetworkServer component of the FlashForge Adventurer 4 Pro firmware.
+  These commands are sent over a TCP connection to port 8899.
+  
+  **Important**: All commands MUST be prefixed with a tilde character `~`.
+  Example: `~M115` instead of `M115`.
+
+commands:
+  # --- Motion Control ---
+  G1:
+    summary: Linear Move
+    description: >-
+      Move to position. The firmware checks for 'E' axis movement and may automatically
+      reset extruder position (G92 E0) before moving if printing via NetworkServer.
+    args:
+      X: float # X coordinate
+      Y: float # Y coordinate
+      Z: float # Z coordinate
+      E: float # Extruder coordinate
+      F: int   # Feedrate
+    example: "~G1 X100 Y100 F3000"
+
+  G28:
+    summary: Auto Home
+    description: Home all axes or specified axes.
+    args:
+      X: flag # Home X
+      Y: flag # Home Y
+      Z: flag # Home Z
+    example: "~G28 X Y"
+
+  G90:
+    summary: Absolute Positioning
+    description: Set coordinates to absolute mode.
+    example: "~G90"
+
+  G91:
+    summary: Relative Positioning
+    description: Set coordinates to relative mode.
+    example: "~G91"
+
+  G92:
+    summary: Set Position
+    description: Set current position to specified values.
+    args:
+      X: float
+      Y: float
+      Z: float
+      E: float
+    example: "~G92 E0"
+
+  M17:
+    summary: Enable Steppers
+    description: Enable stepper motors.
+    example: "~M17"
+
+  M18:
+    summary: Disable Steppers
+    description: Disable stepper motors to allow manual movement.
+    example: "~M18"
+
+  # --- File & Print Management ---
+  M23:
+    summary: Select File
+    description: >-
+      Select a file on the local storage for printing.
+      Paths are normalized (e.g., '0:/user/' -> '/data/').
+      Checks file size before confirming.
+    args:
+      filename: string # Path to file (e.g., "cube.gcode")
+    example: "~M23 test_print.gx"
+
+  M24:
+    summary: Start/Resume Print
+    description: Start or resume printing the selected file.
+    example: "~M24"
+
+  M25:
+    summary: Pause Print
+    description: Pause the current print job.
+    example: "~M25"
+
+  M26:
+    summary: Set SD Position
+    description: Set the file read position (seek).
+    example: "~M26"
+
+  M27:
+    summary: Report Print Status
+    description: Get print progress/status.
+    example: "~M27"
+
+  M28:
+    summary: Start File Upload
+    description: >-
+      Begin file upload to printer storage.
+      Format: ~M28 <size_bytes> 0:/user/<filename>
+      
+      **Upload Flow:**
+      1. Send `~M28 <size> 0:/user/<filename>`
+      2. Server responds with `ack: M28 ...`
+      3. Send exactly `<size>` bytes of raw file data.
+         Do NOT prefix data with `~`.
+      4. Server automatically detects end of file based on size.
+      5. Send `~M29` to confirm and finalize.
+    args:
+      size: int # File size in bytes
+      path: string # Destination path (must start with 0:/user/)
+    example: "~M28 1024 0:/user/upload_test.gcode"
+
+  M29:
+    summary: Stop File Upload
+    description: >-
+      Finalize file upload. Verifies the file size on disk matches the size declared in M28.
+      If sizes match, the file is kept. If not, it is deleted.
+    example: "~M29"
+
+  M601:
+    summary: Pause Print (Internal)
+    description: Pauses print, stops timers, updates status.
+    example: "~M601"
+
+  M602:
+    summary: Resume Print (Internal)
+    description: Resumes print from paused state.
+    example: "~M602"
+
+  # --- Temperature & Environment ---
+  M104:
+    summary: Set Extruder Temperature
+    description: Set target temperature for the extruder.
+    args:
+      S: int # Temperature in Celsius
+    example: "~M104 S200"
+
+  M105:
+    summary: Get Temperature
+    description: >-
+      Returns current temperatures.
+      Response format: "T0:<current>/<target> B:<current>/<target>"
+    example: "~M105"
+
+  M106:
+    summary: Fan On
+    description: Turn on the part cooling fan.
+    example: "~M106"
+
+  M107:
+    summary: Fan Off
+    description: Turn off the part cooling fan.
+    example: "~M107"
+
+  M108:
+    summary: Cancel Heat/Wait
+    description: Cancel heating wait loop (inferred).
+    example: "~M108"
+
+  M140:
+    summary: Set Bed Temperature
+    description: Set target temperature for the heated bed.
+    args:
+      S: int # Temperature in Celsius
+    example: "~M140 S60"
+
+  M146:
+    summary: LED Control
+    description: Control built-in LEDs.
+    args:
+      S: int # Brightness/State (e.g., S100 for on/max)
+      r: int # Red component (inferred)
+      g: int # Green component (inferred)
+      b: int # Blue component (inferred)
+    example: "~M146 r255 g0 b0"
+
+  # --- Status & Info ---
+  M112:
+    summary: Emergency Stop
+    description: Immediate halt of all operations.
+    example: "~M112"
+
+  M114:
+    summary: Get Current Position
+    description: Returns current axis coordinates.
+    example: "~M114"
+
+  M115:
+    summary: Get Firmware Info
+    description: >-
+      Returns machine type, name, firmware version, serial number,
+      build volume dimensions (X/Y/Z), and tool count.
+    example: "~M115"
+
+  M119:
+    summary: Get Endstop Status
+    description: Returns status of endstops, filament sensor, and machine state.
+    example: "~M119"
+
+  # --- Unknown / Custom ---
+  M144:
+    summary: Unknown (Bed?)
+    description: Referenced in command handler map.
+
+  M145:
+    summary: Material Preset?
+    description: Referenced in command handler map.
+
+  M610:
+    summary: Unknown
+    description: Referenced in command handler map.
+
+  M650:
+    summary: Unknown
+    description: Referenced in command handler map.
+
+  M651:
+    summary: Unknown
+    description: Referenced in command handler map.
+
+  M652:
+    summary: Unknown
+    description: Referenced in command handler map.
+
+  M661:
+    summary: Unknown
+    description: Referenced in command handler map.
+
+  M662:
+    summary: Unknown
+    description: Referenced in command handler map.
+
+  M663:
+    summary: Unknown
+    description: Referenced in command handler map.

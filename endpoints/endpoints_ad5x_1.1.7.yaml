@@ -1,0 +1,1060 @@
+paths:
+  /checkCode:
+    post:
+      description: >-
+        Validate serialNumber + checkCode for LAN access. Returns code/message.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+  /detail:
+    post:
+      description: >-
+        Gets info on the current status and config of the printer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailResponse'
+  /product:
+    post:
+      description: >-
+        Returns product capability/control state flags.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+  /control:
+    post:
+      description: >-
+        Send a command to the printer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              - payload
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+                payload:
+                  oneOf:
+                  - $ref: "#/components/schemas/LightControlCmd"
+                  - $ref: "#/components/schemas/CirculateCtlCmd"
+                  - $ref: "#/components/schemas/TemperatureCtlCmd"
+                  - $ref: "#/components/schemas/PrinterCtlCmd"
+                  - $ref: "#/components/schemas/JobCtlCmd"
+                  - $ref: "#/components/schemas/DelayCloseCmd"
+                  - $ref: "#/components/schemas/ReNameCmd"
+                  - $ref: "#/components/schemas/CalibrationCmd"
+                  - $ref: "#/components/schemas/StreamCtrlCmd"
+                  - $ref: "#/components/schemas/UserProfileCmd"
+                  - $ref: "#/components/schemas/MsConfigCmd"
+                  - $ref: "#/components/schemas/IpdMsConfigCmd"
+                  - $ref: "#/components/schemas/MsCmd"
+                  - $ref: "#/components/schemas/IpdMsCmd"
+                  - $ref: "#/components/schemas/MoveCtrlCmd"
+                  - $ref: "#/components/schemas/ExtrudeCtrlCmd"
+                  - $ref: "#/components/schemas/HomingCtrlCmd"
+                  - $ref: "#/components/schemas/ErrorCodeCtrlCmd"
+                  - $ref: "#/components/schemas/StateCtrlCmd"
+                  - $ref: "#/components/schemas/DeviceUnregisterCmd"
+                  - $ref: "#/components/schemas/DeviceUpdateDetailCmd"
+                  - $ref: "#/components/schemas/NewJobCmd"
+                  - $ref: "#/components/schemas/NewLocalJobCmd"
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+  /gcodeList:
+    post:
+      description: >-
+        Returns a list of printable files from /data (extensions: .g, .gx, .gcode, .3mf).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GcodeListResponse'
+  /gcodeThumb:
+    post:
+      description: >-
+        Returns a base64 thumbnail for a given fileName.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              - fileName
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+                fileName:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GcodeThumbResponse'
+  /printGcode:
+    post:
+      description: >-
+        Start printing a file from /data. Returns code/message.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              - fileName
+              - levelingBeforePrint
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+                fileName:
+                  type: string
+                levelingBeforePrint:
+                  type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+  /getThum:
+    get:
+      description: >-
+        Returns current print thumbnail as image/bmp. On error returns JSON code/message.
+      responses:
+        '200':
+          content:
+            image/bmp:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+  /notifyWanBind:
+    post:
+      description: >-
+        Notify WAN bind. Validates serialNumber and triggers a bind event on success.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              properties:
+                serialNumber:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+  /uploadGcode:
+    post:
+      description: >-
+        Upload a gcode/3mf file to local storage via multipart/form-data.
+        Requires headers for serialNumber/checkCode/fileSize/printNow/levelingBeforePrint, plus AD5X
+        material-station options (flowCalibration/firstLayerInspection/timeLapseVideo/useMatlStation/gcodeToolCnt/materialMappings).
+      parameters:
+      - in: header
+        name: serialNumber
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: checkCode
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: fileSize
+        required: true
+        schema:
+          type: integer
+          description: File size in bytes
+      - in: header
+        name: printNow
+        required: true
+        schema:
+          type: string
+          description: String boolean, typically "0" or "1"
+      - in: header
+        name: levelingBeforePrint
+        required: true
+        schema:
+          type: string
+          description: String boolean, typically "0" or "1"
+      - in: header
+        name: flowCalibration
+        required: false
+        schema:
+          type: string
+          description: String boolean, typically "0" or "1" (AD5X only)
+      - in: header
+        name: firstLayerInspection
+        required: false
+        schema:
+          type: string
+          description: String boolean, typically "0" or "1" (AD5X only)
+      - in: header
+        name: timeLapseVideo
+        required: false
+        schema:
+          type: string
+          description: String boolean, typically "0" or "1" (AD5X only)
+      - in: header
+        name: useMatlStation
+        required: false
+        schema:
+          type: string
+          description: String boolean, typically "0" or "1" (AD5X only)
+      - in: header
+        name: gcodeToolCnt
+        required: false
+        schema:
+          type: integer
+          description: Number of tool channels in gcode (AD5X only, max 4)
+      - in: header
+        name: materialMappings
+        required: false
+        schema:
+          type: string
+          description: Base64-encoded JSON array of {toolId, slotId} objects (AD5X only, used when useMatlStation=1)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - gcodeFile
+              properties:
+                gcodeFile:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+components:
+  schemas:
+    DetailResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        detail:
+          $ref: '#/components/schemas/Details'
+    IsOpenEnum:
+      type: string
+      enum:
+      - open
+      - close
+    CodeMessageResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+    ProductResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        product:
+          type: object
+          properties:
+            nozzleTempCtrlState:
+              type: integer
+            chamberTempCtrlState:
+              type: integer
+            platformTempCtrlState:
+              type: integer
+            lightCtrlState:
+              type: integer
+            internalFanCtrlState:
+              type: integer
+            externalFanCtrlState:
+              type: integer
+    GcodeListResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        gcodeList:
+          type: array
+          items:
+            type: string
+    GcodeThumbResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        imageData:
+          type: string
+          description: Base64-encoded thumbnail image
+    Details:
+      type: object
+      description: Verified in AD5X 1.1.7 (request_detail), based on 3.2.7 + AD5X additions.
+      properties:
+        autoShutdown:
+          $ref: "#/components/schemas/IsOpenEnum"
+        autoShutdownTime:
+          type: integer
+        cameraStreamUrl:
+          type: string
+          description: Empty if camera disabled; otherwise http://<ip>:8080/?action=stream.
+        chamberFanSpeed:
+          type: integer
+        chamberTargetTemp:
+          type: number
+        chamberTemp:
+          type: number
+        coolingFanSpeed:
+          type: integer
+        coolingFanLeftSpeed:
+          type: integer
+          description: AD5X only. Left cooling fan speed (0 when idle).
+        clearFanStatus:
+          $ref: "#/components/schemas/IsOpenEnum"
+          description: AD5X only. Always "open" in request_detail.
+        coordinate:
+          type: array
+          items:
+            type: number
+          description: AD5X only. XYZ coordinate array.
+        camera:
+          type: integer
+          description: AD5X only. Camera availability flag (1/2).
+        moveCtrl:
+          type: integer
+          description: AD5X only. Always 1.
+        extrudeCtrl:
+          type: integer
+          description: AD5X only. Always 1.
+        cumulativeFilament:
+          type: number
+        cumulativePrintTime:
+          type: integer
+        currentPrintSpeed:
+          type: integer
+        doorStatus:
+          $ref: "#/components/schemas/IsOpenEnum"
+        errorCode:
+          type: string
+        estimatedLeftLen:
+          type: number
+        estimatedLeftWeight:
+          type: number
+        estimatedRightLen:
+          type: number
+        estimatedRightWeight:
+          type: number
+        estimatedTime:
+          type: number
+        externalFanStatus:
+          $ref: "#/components/schemas/IsOpenEnum"
+        fillAmount:
+          type: integer
+        firmwareVersion:
+          type: string
+        flashRegisterCode:
+          type: string
+        internalFanStatus:
+          $ref: "#/components/schemas/IsOpenEnum"
+        ipAddr:
+          type: string
+        leftFilamentType:
+          type: string
+        hasMatlStation:
+          type: integer
+          description: AD5X only. 0/1 flag for material station presence.
+        matlStationInfo:
+          $ref: "#/components/schemas/MatlStationInfo"
+        indepMatlInfo:
+          $ref: "#/components/schemas/IndepMatlInfo"
+        leftTargetTemp:
+          type: number
+        leftTemp:
+          type: number
+        lightStatus:
+          $ref: "#/components/schemas/IsOpenEnum"
+        location:
+          type: string
+        macAddr:
+          type: string
+        measure:
+          type: string
+        name:
+          type: string
+        nozzleCnt:
+          type: integer
+        nozzleModel:
+          type: string
+        nozzleStyle:
+          type: integer
+        pid:
+          type: integer
+          description: AD5X uses "0026" -> 26.
+        platTargetTemp:
+          type: number
+        platTemp:
+          type: number
+        polarRegisterCode:
+          type: string
+        printDuration:
+          type: integer
+        printFileName:
+          type: string
+        printFileThumbUrl:
+          type: string
+          description: Empty if no thumb; otherwise http://<ip>:8898/getThum. Base file dir is /data/.
+        printLayer:
+          type: integer
+        printProgress:
+          type: number
+        printSpeedAdjust:
+          type: number
+        remainingDiskSpace:
+          type: number
+        rightFilamentType:
+          type: string
+        rightTargetTemp:
+          type: number
+        rightTemp:
+          type: number
+        status:
+          type: string
+        targetPrintLayer:
+          type: integer
+        tvoc:
+          type: integer
+        zAxisCompensation:
+          type: number
+    MatlStationInfo:
+      type: object
+      description: AD5X material station summary.
+      properties:
+        slotCnt:
+          type: integer
+          description: Always 4.
+        currentSlot:
+          type: integer
+          description: Current slot id (from SerialObject material operation field +0x344).
+        currentLoadSlot:
+          type: integer
+          description: Current load/unload slot id (from SerialObject material operation field +0x348).
+        stateAction:
+          type: integer
+          description: >-
+            Material operation stage. Observed values: 0=idle/cancel, 2=load step 2, 3=load step 3,
+            4=unload step 2, 5=unload step 3, 6=complete.
+        stateStep:
+          type: integer
+          description: >-
+            Material operation mode. Observed values: 0=idle, 1=load, 2=unload, 3=cancel.
+        slotInfos:
+          type: array
+          items:
+            $ref: "#/components/schemas/MatlSlotInfo"
+    MatlSlotInfo:
+      type: object
+      description: AD5X material station slot info.
+      properties:
+        slotId:
+          type: integer
+        hasFilament:
+          type: boolean
+        materialName:
+          type: string
+        materialColor:
+          type: string
+          description: Color string before first ';' in config.
+    IndepMatlInfo:
+      type: object
+      description: AD5X independent material info.
+      properties:
+        stateAction:
+          type: integer
+          description: >-
+            Material operation stage. Observed values: 0=idle/cancel, 2=load step 2, 3=load step 3,
+            4=unload step 2, 5=unload step 3, 6=complete.
+        stateStep:
+          type: integer
+          description: >-
+            Material operation mode. Observed values: 0=idle, 1=load, 2=unload, 3=cancel.
+        materialName:
+          type: string
+        materialColor:
+          type: string
+          description: Color string before first ';' in config.
+    JobInfo:
+      type: array
+      description: |
+        Array of job tuples. Structure: `[[deviceSN, jobID, filepath], ...]`.
+        Firmware iterates this array looking for a `deviceSN` (index 0) match with the local printer.
+      items:
+        type: array
+        items:
+          type: string
+    NewJobCmd:
+      type: object
+      description: Start a cloud/multi-device job.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [newJob_cmd]
+        args:
+          type: object
+          required:
+          - jobInfo
+          properties:
+            jobRouter:
+              type: boolean
+              description: |
+                **Presence Flag**: The value (true/false) is ignored. If this key is *present* in the JSON,
+                the firmware extracts the filepath from `jobInfo` tuple index 2.
+                If *absent*, it uses the root `filepath` property.
+            jobInfo:
+              type: array
+              items:
+                - $ref: "#/components/schemas/JobInfo"
+            filepath:
+              type: string
+              description: only read if jobRouter is not declared
+            filename:
+              type: string
+            thumbPath:
+              type: string
+            fileMd5:
+              type: string
+            printNow:
+              type: boolean
+            leveling:
+              type: boolean
+    PrinterCtlCmd:
+      type: object
+      description: |
+        Set speeds, fans, and z-axis compensation.
+        **Partial Update Behavior:** This command supports partial updates. Fields omitted from the payload
+        are ignored by the firmware (using internal sentinel values, e.g., -200).
+        **Important:** Do NOT send default values (like 0) for fields you do not intend to change,
+        as this will overwrite the user's current settings.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [printerCtl_cmd]
+        args:
+          type: object
+          properties:
+            zAxisCompensation:
+              type: number
+              default: -200.0
+              description: |
+                Z-offset in mm. Maps to `SET_GCODE_OFFSET Z=<val> MOVE=1`.
+                Range: -5.0 to +5.0. Values outside this range are ignored.
+                Sentinel: -200.0 (ignore).
+            speed:
+              type: integer
+              default: -200
+              description: |
+                Print speed percentage. Maps to `M220 S<val>`.
+                Clamped range: 50-150.
+                Sentinel: -200 (ignore).
+            chamberFan:
+              type: integer
+              default: -200
+              description: Chamber fan speed (0-255, 0=off). Sentinel -200 (ignore).
+            coolingFan:
+              type: integer
+              default: -200
+              description: Cooling fan speed (0-255, 0=off). Sentinel -200 (ignore).
+    JobCtlCmd:
+      type: object
+      description: Control print jobs (pause, resume, cancel)
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [jobCtl_cmd]
+        args:
+          type: object
+          required:
+          - jobID
+          - action
+          properties:
+            jobID:
+              type: string
+              description: Job identifier
+            action:
+              type: string
+              description: Control action
+              enum: [pause, continue, resume, cancel, stop]
+    DelayCloseCmd:
+      type: object
+      description: configure automatic power-off
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [delayClose_cmd]
+        args:
+          type: object
+          required:
+          - automaticShutdown
+          - shutdownAfterTime
+          properties:
+            automaticShutdown:
+              type: string
+            shutdownAfterTime:
+              type: integer
+    ReNameCmd:
+      type: object
+      description: give your printer a nickname
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [reName_cmd]
+        args:
+          type: object
+          required:
+          - name
+          properties:
+            name:
+              type: string
+    CalibrationCmd:
+      type: object
+      description: configure leveling and vibration compensation
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [calibration_cmd]
+        args:
+          type: object
+          required:
+          - levelingDetection
+          - vibrationCompensation
+          properties:
+            levelingDetection:
+              type: string
+            vibrationCompensation:
+              type: string
+    StreamCtrlCmd:
+      type: object
+      description: control the camera state
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [streamCtrl_cmd]
+        args:
+          type: object
+          required:
+          - action
+          properties:
+            action:
+              type: string
+    UserProfileCmd:
+      type: object
+      description: best guess... cloud account management
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [userProfile_cmd]
+        args:
+          type: object
+          required:
+          - name
+          - avatar
+          properties:
+            name:
+              type: string
+            avatar:
+              type: string
+    MsConfigCmd:
+      type: object
+      description: |
+        AD5X only. Configure material station slot metadata.
+        **Validation:** Firmware performs NO validation on strings.
+        **Palette:** UI recognizes 24 specific hex codes (e.g., #FFFFFF, #FEF043, #161616).
+        **Types:** UI supports PLA, PLA-CF, ABS, PETG, PETG-CF, TPU, SILK. Hidden support for PA-CF, PC, etc.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [msConfig_cmd]
+        args:
+          type: object
+          required:
+          - slot
+          - mt
+          - rgb
+          properties:
+            slot:
+              type: integer
+              description: Material station slot (1-4).
+            mt:
+              type: string
+              description: Material name/type string (e.g. "PLA"). Arbitrary strings accepted.
+            rgb:
+              type: string
+              description: Material color string (e.g. "#FF0000"). Arbitrary strings accepted.
+    IpdMsConfigCmd:
+      type: object
+      description: |
+        AD5X only. Configure independent material metadata.
+        **Validation:** Firmware performs NO validation on strings.
+        **Palette:** UI recognizes 24 specific hex codes.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [ipdMsConfig_cmd]
+        args:
+          type: object
+          required:
+          - mt
+          - rgb
+          properties:
+            mt:
+              type: string
+              description: Material name/type string (e.g. "PLA"). Arbitrary strings accepted.
+            rgb:
+              type: string
+              description: Material color string (e.g. "#FF0000"). Arbitrary strings accepted.
+    MsCmd:
+      type: object
+      description: AD5X only. Material station command.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [ms_cmd]
+        args:
+          type: object
+          required:
+          - action
+          - slot
+          properties:
+            action:
+              type: integer
+              enum: [0, 1, 2]
+              description: 0=load, 1=unload, 2=cancel.
+            slot:
+              type: integer
+    IpdMsCmd:
+      type: object
+      description: AD5X only. Independent material station command.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [ipdMs_cmd]
+        args:
+          type: object
+          required:
+          - action
+          properties:
+            action:
+              type: integer
+              enum: [0, 1, 2]
+              description: 0=load, 1=unload, 2=cancel.
+    MoveCtrlCmd:
+      type: object
+      description: AD5X only. Manual axis move.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [moveCtrl_cmd]
+        args:
+          type: object
+          required:
+          - axis
+          - delta
+          properties:
+            axis:
+              type: string
+              enum: [x, y, z]
+              description: Axis identifier (lowercase).
+            delta:
+              type: number
+              description: Move distance (float).
+    ExtrudeCtrlCmd:
+      type: object
+      description: AD5X only. Manual extruder move.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [extrudeCtrl_cmd]
+        args:
+          type: object
+          required:
+          - axis
+          - delta
+          properties:
+            axis:
+              type: string
+              description: Axis identifier (ignored by handler).
+            delta:
+              type: number
+              description: Extrude/retract distance (float).
+    HomingCtrlCmd:
+      type: object
+      description: AD5X only. Home all axes.
+      required:
+      - cmd
+      properties:
+        cmd:
+          type: string
+          enum: [homingCtrl_cmd]
+        args:
+          type: object
+          description: Optional/unused by firmware.
+    ErrorCodeCtrlCmd:
+      type: object
+      description: AD5X only. Clear printer error code.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [errorCodeCtrl_cmd]
+        args:
+          type: object
+          required:
+          - action
+          - errorCode
+          properties:
+            action:
+              type: string
+              enum: [clearErrorCode]
+              description: Must be clearErrorCode; handler clears only if errorCode matches current error.
+            errorCode:
+              type: string
+    DeviceUnregisterCmd:
+      type: object
+      description: best guess... disables cloud account
+      required:
+      - cmd
+      properties:
+        cmd:
+          type: string
+          enum: [deviceUnregister_cmd]
+    StateCtrlCmd:
+      type: object
+      description: control the printer state
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [stateCtrl_cmd]
+        args:
+          type: object
+          required:
+          - action
+          properties:
+            action:
+              type: string
+    DeviceUpdateDetailCmd:
+      type: object
+      description: |
+        Check for firmware updates from FlashForge update server.
+        Despite the name, this command does NOT update local device details.
+        It queries the remote update server for firmware version information.
+
+        This command will:
+        - Query all 4 firmware packages (kernel, control, library, software)
+        - Check for available updates on update.flashforge.com
+        - Retrieve version information, download URLs, and changelogs
+        - Return update availability without installing anything
+
+        This command will NOT:
+        - Modify any local printer state
+        - Install firmware updates
+        - Update device information cache
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [deviceUpdateDetail_cmd]
+        args:
+          type: object
+          description: Empty args object (no parameters required)
+    NewLocalJobCmd:
+      type: object
+      description: submit a new job to the print
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [newLocalJob_cmd]
+        args:
+          type: object
+          required:
+          - jobId
+          - fileName
+          - printNow
+          - leveling
+          properties:
+            jobId:
+              type: string
+            fileName:
+              type: string
+            thumbPath:
+              type: string
+            printNow:
+              type: boolean
+              description: Start printing immediately
+            leveling:
+              type: boolean
+              description: Perform bed leveling before print
+            flowCalibration:
+              type: boolean
+              description: Perform flow calibration (AD5X only)
+            useMs:
+              type: boolean
+              description: Use material station (AD5X only)
+            tCount:
+              type: integer
+              description: Material/tool count (AD5X only)

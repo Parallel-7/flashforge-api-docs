@@ -1,0 +1,1244 @@
+# FlashForge Adventurer 3 NetworkServer Protocol Specification
+# Firmware: v1.3.7 20230725
+# Port: 8899 (TCP)
+# Protocol: TCP Socket with line-based ASCII commands (G-code/M-code)
+
+description: >-
+  This file documents the proprietary and standard G-code/M-code commands supported by the
+  NetworkServer component of the FlashForge Adventurer 3 firmware (finder-rush-mips binary).
+
+  **Protocol Overview:**
+  - Transport: TCP socket on port 8899
+  - Format: Line-based ASCII commands with tilde (~) prefix
+  - Response: Acknowledgment prefixed with "ack:" or "echo:"
+
+  **Command Format:**
+  All commands MUST be prefixed with a tilde character `~` followed by the G-code or M-code.
+  Example: `~M115` instead of `M115`
+
+  **Response Format:**
+  Responses typically begin with `ack: ` or `echo: ` prefix followed by the response data.
+  Multi-line responses are terminated with `\r\n`.
+
+  **Connection Model:**
+  - Multi-threaded server (one thread per client)
+  - Maximum 10 concurrent connections
+  - No authentication required
+
+  **Critical Differences from Adventurer 4 Pro:**
+  - No HTTP REST API (TCP only)
+  - No authentication on port 8899
+  - Different set of custom M-codes
+  - On/off fan control only (no variable speed)
+  - No built-in camera (accessory only)
+
+commands:
+  # --- Motion Control (G-codes) ---
+
+  G1:
+    summary: Linear move to specified position
+    description: >-
+      Move the print head to the specified coordinates. This command supports up to 5 axes:
+      X, Y, Z (position), E (extruder), and F (feedrate).
+
+      **Special E-parameter Handling:**
+      If the command contains an E parameter (extrusion), the firmware automatically
+      injects a "G92 E0" command before the movement to reset the extruder position.
+      This prevents extruder position accumulation errors during manual moves.
+
+      **Blocked During Printing:**
+      This command is ignored if a print job is currently active (BuildPrint::instBuildPrint != null).
+    args:
+      X: float # X coordinate in mm (0-150mm)
+      Y: float # Y coordinate in mm (0-150mm)
+      Z: float # Z coordinate in mm (0-150mm)
+      E: float # Extruder position in mm (triggers G92 E0 injection)
+      F: int   # Feedrate in mm/min
+    response: None (asynchronous - forwarded to motion controller)
+    example: "~G1 X100 Y100 Z0.3 F3000"
+    notes: >
+      - Motion blocked during active prints
+      - E parameter auto-injects G92 E0 before move
+      - No explicit acceleration control
+      - Coordinate system: Origin (0,0,0) at front-left corner
+
+  G28:
+    summary: Auto-home all or specified axes
+    description: >-
+      Home the printer by moving axes to their endstops until triggered.
+      This establishes the coordinate system origin.
+
+      **Implementation:**
+      Unlike other motion commands, G28 does not directly send output to the serial port.
+      The parser handles the homing sequence internally, likely calling motion controller
+      functions directly.
+
+      **Homing Sequence (typical Cartesian printer):**
+      1. Z axis homes first (moves down until trigger)
+      2. X and Y home simultaneously
+      3. XY moves to center position
+
+      **Default behavior (no parameters):** Homes all axes (X, Y, Z)
+    args:
+      X: boolean # Home X axis (optional)
+      Y: boolean # Home Y axis (optional)
+      Z: boolean # Home Z axis (optional)
+    response: None (asynchronous - handled by parser internally)
+    example: "~G28"
+    example2: "~G28 X Y"
+    example3: "~G28 Z"
+    notes: >
+      - No direct serial output from TCP handler
+      - Parser handles homing sequence internally
+      - Axes can be specified in any combination
+      - Required before first print or after position loss
+
+  G90:
+    summary: Set absolute positioning mode
+    description: >-
+      Set all subsequent G1 movement commands to use absolute coordinates from origin.
+
+      In absolute mode, coordinates are interpreted as actual positions in the build volume.
+      For example, `G1 X50` will move to X=50mm regardless of current position.
+
+      **Blocked During Printing:**
+      This command is ignored if a print job is currently active.
+    args: None
+    response: None (asynchronous - forwarded to motion controller)
+    example: "~G90"
+    notes: >
+      - Positioning mode state maintained by motion controller firmware
+      - Default mode on startup (likely G90)
+      - Opposite of G91 (relative positioning)
+
+  G91:
+    summary: Set relative positioning mode
+    description: >-
+      Set all subsequent G1 movement commands to use relative offsets from current position.
+
+      In relative mode, coordinates are interpreted as offsets from the current position.
+      For example, `G1 X10` will move +10mm from the current X position.
+
+      **Blocked During Printing:**
+      This command is ignored if a print job is currently active.
+    args: None
+    response: None (asynchronous - forwarded to motion controller)
+    example: "~G91"
+    notes: >
+      - Useful for fine adjustments and calibration
+      - Opposite of G90 (absolute positioning)
+      - State tracked by motion controller, not by TCP handler
+
+  G92:
+    summary: Set current position without moving
+    description: >-
+      Set the current position to specified values without moving the print head.
+      This resets the coordinate system to a new origin.
+
+      **Common Uses:**
+      - Reset extruder position: `G92 E0`
+      - Set work offset for multi-part prints
+      - Recover from lost position after skipped steps
+      - Define print start position
+
+      **Blocked During Printing:**
+      This command is ignored if a print job is currently active.
+    args:
+      X: float # Set X position to specified value (mm)
+      Y: float # Set Y position to specified value (mm)
+      Z: float # Set Z position to specified value (mm)
+      E: float # Set extruder position to specified value (mm)
+    response: None (asynchronous - forwarded to motion controller)
+    example: "~G92 E0"
+    example2: "~G92 X0 Y0 Z0"
+    example3: "~G92 X50"
+    notes: >
+      - No movement occurs, only position tracking changes
+      - Useful for resetting extruder before manual moves
+      - Can set multiple axes simultaneously
+      - No parameters sets all axes to current position (no-op)
+
+  # --- Printer Control (M-codes) ---
+
+  M17:
+    summary: Enable stepper motors
+    description: >-
+      Enable all stepper motors, allowing them to hold position and receive movement commands.
+
+      **Motors Affected:**
+      - X axis stepper
+      - Y axis stepper
+      - Z axis stepper
+      - E (extruder) stepper
+
+      **Safety Considerations:**
+      - Motors heat up when enabled and can overheat if left enabled without movement
+      - Printer holds position, consuming power
+      - Typical timeout: Auto-disable after period of inactivity
+    args: None
+    response: "CMD M17 Received."
+    example: "~M17"
+    notes: >
+      - Motors can overheat if left enabled without movement
+      - Z axis may free-fall if disabled (support bed before disabling!)
+      - Must home (G28) before printing after disabling motors
+
+  M18:
+    summary: Disable stepper motors
+    description: >-
+      Disable all stepper motors, releasing holding torque and allowing free movement.
+
+      **Motors Affected:**
+      - X axis stepper
+      - Y axis stepper
+      - Z axis stepper
+      - E (extruder) stepper
+
+      **Use Cases:**
+      - Manual bed leveling
+      - Loading/unloading filament
+      - Transport/Shipping (prevent motor overheating)
+      - Power saving when idle
+
+      **Safety Considerations:**
+      - Build plate can drop freely when Z is disabled (support it!)
+      - Printer loses position knowledge - G28 required before next print
+      - Hotend remains hot (only motors are disabled)
+    args: None
+    response: "CMD M18 Received."
+    example: "~M18"
+    notes: >
+      - Returns error "printing can not send M18" if print is active
+      - Always home (G28) before printing again after M18
+      - Z axis will free-fall if not supported
+      - No recovery possible without re-homing
+
+  M23:
+    summary: Select SD file for printing
+    description: >-
+      Select a file from the SD card storage for printing. The command opens the file,
+      verifies its size, and prepares it for printing. However, it does NOT start the print
+      automatically - you must send M24 to start.
+
+      **Path Normalization:**
+      The firmware normalizes file paths by stripping these prefixes:
+      - `0:/user/` prefix (removed if present)
+      - `/data/` prefix (removed if present)
+      - Whitespace trimmed
+      Final storage: `/data/<filename>`
+
+      **File Formats Supported:**
+      - `.g` - G-code files (primary format)
+      - `.gx` - FlashForge encrypted G-code format
+      - `.gcode` - Standard G-code files
+
+      **Triggered Signals:**
+      - `sig_startprint()` - Emitted with full file path
+      - Print does NOT start automatically - requires M24 command
+    args:
+      filepath: string # File path on SD card (e.g., "model.g", "0:/user/test.g", "/data/test.g")
+    response: >
+      File opened: <normalized_path> Size: <bytes>
+      Done printing file
+      ok
+    example: "~M23 test_model.g"
+    example2: "~M23 0:/user/calibration.g"
+    example3: "~M23 /data/example.gcode"
+    notes: >
+      - All prefixes stripped and normalized
+      - Path separators: /
+      - Final storage always in /data/
+      - File must exist and be readable
+      - Returns size 0 if file not found
+      - Must call M24 to actually start printing
+
+  M24:
+    summary: Start or resume print job
+    description: >-
+      Start a print job if file selected but not started, or resume a paused print job.
+
+      **State Machine:**
+      ```
+      IDLE → M23 (select file) → READY → M24 → PRINTING
+                                            ↓
+                                         PAUSED → M24 → PRINTING
+      ```
+
+      **Behavior:**
+      - If READY (file selected, not started): Starts printing from beginning
+      - If PAUSED: Resumes from paused position
+      - If PRINTING: No-op (already printing)
+      - If IDLE: Command accepted but print won't start
+
+      **Triggered Signals:**
+      - `sig_printresume()` - Emitted to resume printing
+    args: None
+    response: "CMD M24 Received."
+    example: "~M24"
+    notes: >
+      - No-op if already printing
+      - Check M27 status to verify print started
+      - Use M25 to pause instead of cancel
+      - M26 will cancel the print job
+
+  M25:
+    summary: Pause print job
+    description: >-
+      Immediately pause the current print job, saving current position for later resumption.
+
+      **State Preservation:**
+      The pause mechanism preserves:
+      - XYZ coordinates (current position)
+      - Extruder position (E)
+      - Current temperatures (nozzle and bed)
+      - File read position (to resume from correct location)
+
+      **Paused State:**
+      - Print head may park in safe location
+      - Heaters maintained at target temperature
+      - Motors may be disabled (M18) for safety
+      - Can be resumed with M24
+
+      **Triggered Signals:**
+      - `sig_printpause()` - Emitted to pause printing
+    args: None
+    response: "CMD M25 Received."
+    example: "~M25"
+    notes: >
+      - Print state saved for recovery
+      - Heaters remain at target temperature
+      - Use M24 to resume printing
+      - M26 will cancel print (unrecoverable)
+
+  M26:
+    summary: Cancel print job
+    description: >-
+      Immediately cancel the current print operation and abort the file read.
+
+      **Behavior:**
+      - Immediately cancels current print
+      - Aborts file read
+      - Disables heaters
+      - May home axes (depends on firmware configuration)
+      - File selection is cleared
+
+      **State Transitions:**
+      ```
+      PRINTING → M26 → IDLE
+      PAUSED → M26 → IDLE
+      READY → M26 → IDLE (no-op if no file selected)
+      ```
+
+      **Triggered Signals:**
+      - `sig_printcancel()` - Emitted to cancel printing
+
+      **Warning:** This is a hard cancel - print progress is lost. Cannot resume after M26.
+    args:
+      bytePosition: int # Optional byte position for SD resume (ignored in A3)
+    response: "CMD M26 Received."
+    example: "~M26"
+    notes: >
+      - Hard stop - print cannot be resumed
+      - File selection cleared
+      - Must select file with M23 again to restart
+      - May home axes as part of cancel sequence
+
+  M27:
+    summary: Get print status and progress
+    description: >-
+      Query the current print job progress and status.
+
+      **Progress Format:**
+      The firmware uses a confusing format where "bytes" are actually percentage points:
+      - Current value = 0-100 (percentage complete)
+      - Total value = always 100 (representing 100%)
+
+      **Response Interpretation:**
+      - `SD printing byte 0/0` - No print active (IDLE)
+      - `SD printing byte 45/100` - 45% complete, actively printing
+      - `SD printing byte 100/100` - Print complete or 100% complete
+
+      **Progress Calculation:**
+      The firmware multiplies internal progress (0.0-1.0) by 100 to get percentage.
+    args: None
+    response: >
+      CMD M27 Received.
+      SD printing byte <current>/<total>
+      ok
+    example: "~M27"
+    notes: >
+      - "byte" values are percentages, not actual bytes
+      - Total is always 100
+      - Use M105 to verify temperatures while polling
+      - Poll every 1-2 seconds for real-time updates
+
+  M28:
+    summary: Begin file upload to SD card
+    description: >-
+      Initialize a binary file upload to the printer's SD card storage. This command
+      switches the connection to binary mode for receiving raw G-code data.
+
+      **Path Format Requirements:**
+      - Must match regex: `^\s*(\d+)\s+(0:/user/([^\n]+))`
+      - File path MUST start with `0:/user/`
+      - Filename is extracted from path
+      - Final storage: `/data/<filename>`
+
+      **Validation Steps:**
+      1. Parse arguments with regex
+      2. Check available disk space via `check_free_space()`
+      3. Create file in `/data/` directory
+      4. Show upload progress dialog on printer display
+
+      **Binary Mode:**
+      After M28 succeeds, the server expects raw binary G-code data stream.
+      No further text commands are processed until M29 is received.
+    args:
+      filesize: int # Size of file to upload (in bytes)
+      filepath: string  # Target path with "0:/user/" prefix (e.g., "0:/user/model.g")
+    response: >
+      CMD M28 Received.
+      ok (success)
+
+      OR
+
+      Error: Not enough space (insufficient disk space)
+
+      OR
+
+      Error: Cannot create file (path invalid)
+    example: "~M28 1234567 0:/user/newprint.gcode"
+    notes: >
+      - File size MUST be accurate (verified by M29)
+      - Client must have file size before starting
+      - Max file size limited by SD card capacity (FAT32 = 4GB)
+      - Recommended chunk size: 4096 bytes
+      - Disk space checked before accepting upload
+      - Upload progress dialog shown on printer display
+
+  M29:
+    summary: Complete file upload and verify
+    description: >-
+      Complete the binary file upload initiated by M28 and verify the transfer.
+
+      **Verification Process:**
+      1. Compares actual uploaded file size with expected size from M28
+      2. If sizes match exactly: File is valid, keeps it
+      3. If sizes differ: File is corrupted, deletes it
+
+      **Finalization:**
+      On successful upload:
+      - Updates file timestamp via `setFileNewTime()`
+      - Closes upload file handle
+      - Closes upload dialog on printer
+      - Refreshes file list display (`sig_showMemoryList()`)
+
+      **Error Handling:**
+      On size mismatch or other error:
+      - Logs critical error: "File Is Not Available"
+      - Deletes incomplete file via QFile::remove()
+      - Returns error to client
+    args: None
+    response: >
+      CMD M29 Received.
+      ok
+      filesize = <expected>  tofile.size = <actual>
+      ack: "ok" (success)
+
+      OR
+
+      Error logged: "File Is Not Available" (size mismatch)
+    example: "~M29"
+    notes: >
+      - All bytes MUST be received for success
+      - No partial uploads accepted
+      - Network errors during upload = complete failure
+      - Delete and retry if size mismatch occurs
+      - File is verified before being committed
+
+  M104:
+    summary: Set extruder temperature
+    description: >-
+      Set the target temperature for the hotend/nozzle.
+
+      **Temperature Validation:**
+      - Maximum temperature read from extruder configuration file
+      - Typical maximum: 265°C (0x109 in hex)
+      - Requested temperatures are automatically capped at maximum
+      - Minimum temperature: 0°C (room temperature)
+
+      **Offset Support:**
+      - Firmware supports user-configured temperature offsets
+      - Read from nozzle temperature different file
+      - Offset applied before sending to hardware
+
+      **Heater Control:**
+      - Command is stored and sent to printer controller
+      - Hardware PID loop maintains actual temperature
+      - No wait-for-heat flag (asynchronous operation)
+    args:
+      S: int # Target temperature in Celsius (0-265°C)
+      T: int # Extruder index (default: 0, A3 has single extruder)
+    response: "ack: " with command echo
+    example: "~M104 S200"
+    example2: "~M104 S0"
+    example3: "~M104 T0 S210"
+    notes: >
+      - Temperatures above 265°C automatically clamped
+      - Temperature change is asynchronous (no wait)
+      - Use M105 to poll actual temperature
+      - Offset support for fine-tuning
+      - Minimum: 0°C (room temp)
+
+  M105:
+    summary: Get current temperatures
+    description: >-
+      Query the current nozzle and bed temperatures from the printer.
+
+      **Response Format When PRINTING:**
+      ```
+      ok T0:<current>/<target> B:<bed_current>/<bed_target>
+      ```
+
+      **Response Format When NOT PRINTING:**
+      ```
+      ok T0:<current>/0 B:<bed_current>/<bed_target>
+      ```
+
+      **Temperature Values:**
+      - T0: Nozzle/extruder temperature in Celsius
+      - B: Heated bed temperature in Celsius
+      - Format: `current/target` or `current/0` (no target set)
+
+      **Thread-Safe Reading:**
+      All temperature getters use mutex locks for thread safety:
+      - `getCurrentExtruderTemp()` - Offset +0x17c
+      - `getTargetExtruderTemp()` - Offset +0x180
+      - `getCurrentPlatformTemp()` - Offset +0x174
+      - `getTargetPlatformTemp()` - Offset +0x178
+      - Mutex lock at offset +0xcc
+    args: None
+    response: >
+      CMD M105 Received.
+      ok T0:<nozzle_current>/<nozzle_target> B:<bed_current>/<bed_target>
+    example: "~M105"
+    notes: >
+      - Single extruder only (T0)
+      - Temperatures in Celsius (integer values)
+      - Target shows as 0 when not printing
+      - Thread-safe mutex-protected reads
+      - Poll every 1-2 seconds for monitoring
+
+  M106:
+    summary: Turn on cooling fan
+    description: >
+      Turn on the part cooling fan at full speed.
+
+      **Adventurer 3 Fan Control:**
+      - **ON/OFF ONLY** - No variable speed support
+      - Unlike 5M series, A3 does NOT support M106 with S parameter
+      - Command is forwarded as "M106" with no speed parameter
+
+      **Fan Types:**
+      1. **Part Cooling Fan:** Controlled by M106/M107
+      2. **Extruder Cooling Fan:** Always on when extruder is hot (safety-critical)
+    args: None
+    response: "CMD M106 Received."
+    example: "~M106"
+    notes: >
+      - No variable speed control (on/off only)
+      - Default speed when ON: 100% (full speed)
+      - Extruder fan runs automatically (not controlled by M106/M107)
+      - Use M107 to turn off
+
+  M107:
+    summary: Turn off cooling fan
+    description: >
+      Turn off the part cooling fan.
+
+      **Behavior:**
+      - Fan stops spinning immediately
+      - No gradual ramp-down
+      - Extruder cooling fan continues running if hotend is hot
+
+      **Related Command:**
+      M106 turns the fan back on.
+    args: None
+    response: "CMD M107 Received."
+    example: "~M107"
+    notes: >
+      - Part cooling fan only (not extruder fan)
+      - Extruder fan is automatic and cannot be controlled
+      - Immediate stop (no ramp-down)
+
+  M108:
+    summary: Cancel heat wait (STUBBED - No effect)
+    description: >
+      **WARNING:** This command is stubbed out in Adventurer 3 firmware and has no effect.
+
+      **Expected Behavior (standard RepRap):**
+      Cancel waiting for temperature to reach target and resume immediately.
+
+      **Actual Adventurer 3 Behavior:**
+      - Command is logged but performs no action
+      - No serial communication to printer controller
+      - No state change
+
+      **Workarounds:**
+      - Use pause/resume (M25/M24) instead
+      - Set new target temperatures to change heat settings
+      - Emergency stop with M112 if needed
+    args: None
+    response: "CMD M108 Received."
+    example: "~M108"
+    notes: >
+      - Stubbed out - does nothing on Adventurer 3
+      - Do not rely on this command
+      - Use M25/M24 for print control instead
+      - Set temperatures to 0 to stop heating
+
+  M112:
+    summary: Emergency stop
+    description: >
+      **CRITICAL SAFETY COMMAND** - Immediately halts all printer operations.
+
+      **Emergency Stop Sequence:**
+      1. M112 - Emergency stop command (immediate halt)
+      2. G162 Z F500 - Home Z axis at 500 mm/min (emergency retract)
+      3. M104 S0 T0 - Turn off extruder heater (tool 0 to 0°C)
+      4. G162 X Y- F2000 - Home X and Y axes at 2000 mm/min
+
+      **State Cleanup:**
+      - Homes all axes (losing position)
+      - Turns off heaters (losing temperature)
+      - Resets internal SerialObject state
+      - **Cannot recover print job** after M112
+
+      **Recovery After M112:**
+      To print again:
+      1. Re-home the printer (G28)
+      2. Reheat the extruder and bed
+      3. Select file again (M23)
+      4. Start print from beginning (M24)
+      5. Optionally use "resume from layer" if firmware supports it
+    args: None
+    response: "echo: Emergency Stop!!!" (or similar)
+    example: "~M112"
+    notes: >
+      - CANNOT BE UNDONE - Print job is lost
+      - Axes are homed (position lost)
+      - Heaters are turned off
+      - Internal state is reset
+      - Use only for emergencies
+
+  M114:
+    summary: Get current position
+    description: >
+      Query the current print head position from the printer's motion controller.
+
+      **Response Format:**
+      ```
+      CMD M114 Received.
+      X:<x_pos> Y:<y_pos> Z:<z_pos> A:<val1> B:<val2>
+      ```
+
+      **Position Units:**
+      - X, Y, Z: Millimeters (mm)
+      - A, B: Unknown (possibly extruder positions or temperature-related)
+
+      **Note:**
+      - Extruder position is typically labeled 'E' in standard RepRap,
+        but Adventurer 3 firmware uses A/B in the response.
+    args: None
+    response: >
+      CMD M114 Received.
+      X:10.5 Y:20.3 Z:0.3 A:0.00 B:0.00
+    example: "~M114"
+    notes: >
+      - Synchronous command (waits for motion controller)
+      - Units in millimeters for X, Y, Z
+      - A and B values purpose unclear
+      - Use to verify position after critical moves
+      - May show 'E' instead of 'A'/'B' in some firmware versions
+
+  M115:
+    summary: Get firmware and printer information
+    description: >
+      Returns comprehensive printer identification including machine type, firmware version,
+      serial number, build dimensions, tool count, and network MAC address.
+
+      **Response Fields:**
+      - Machine Type: "FlashForge Adventurer III" (hardcoded)
+      - Machine Name: User-assigned printer name (from SerialNoFile)
+      - Firmware: Version string (e.g., "v1.3.7")
+      - Serial Number: Factory serial number (from SerialNoFile)
+      - X: 150 Y: 150 Z: 150 (Build volume in mm)
+      - Tool Count: 1 (single extruder)
+      - Mac Address: Network MAC from /etc/MAC file
+
+      **Data Sources:**
+      - Build volume: Hardcoded string "150 X 150 X 150" parsed into X/Y/Z
+      - MAC address: Read from /etc/MAC file (32 bytes, format XX:XX:XX:XX:XX:XX)
+      - Serial number: From configuration files via SerialNoFile class
+      - Firmware version: Hardcoded string "1.3.7 20230725"
+    args: None
+    response: >
+      echo: Machine Type: FlashForge Adventurer III
+      Machine Name: <printer_name>
+      Firmware: v1.3.7
+      Serial Number: <serial>
+      X: 150 Y: 150 Z: 150
+      Tool Count: 1
+      Mac Address:<mac_address>
+    example: "~M115"
+    notes: >
+      - Build volume: 150x150x150mm (hardcoded)
+      - Firmware: v1.3.7 20230725
+      - Use for printer identification
+      - MAC address used for network discovery
+
+  M119:
+    summary: Get endstop status and printer state
+    description: >
+      Query comprehensive printer status including endstops, machine state, move mode,
+      filament sensor, LED status, and current print file.
+
+      **Response Fields:**
+      - Endstop: X-max, Y-max, Z-min states (0=open, 1=triggered)
+      - MachineStatus: IDLE, PRINTING, PAUSED, HOMING, ERROR
+      - MoveMode: Numeric move mode value (0.0, 1.0, etc.)
+      - FilamentStatus: "ok" (filament present) or "no filament"
+      - LEDStatus: "on" or "off"
+      - PrintFileName: Current print file name (empty if not printing)
+
+      **Filament Detection:**
+      Firmware sends M113 command internally and parses response.
+      Status determined by comparing second field to "1".
+
+      **Endstop States:**
+      - Default values if no custom string: All axes 0 (not triggered)
+      - 0 = Open/not triggered
+      - 1 = Closed/triggered
+    args: None
+    response: >
+      echo: Endstop: X-max: <x> Y-max: <y> Z-min: <z>
+      MachineStatus: <state>
+      MoveMode: <mode>
+      FilamentStatus: <filament_state>
+      LEDStatus: <led_state>
+      PrintFileName: <filename_or_empty>
+    example: "~M119"
+    notes: >
+      - Endstop values: 0=open, 1=triggered
+      - MachineStatus: IDLE, PRINTING, PAUSED, HOMING, ERROR
+      - MoveMode: Numeric mode indicator
+      - Use for status monitoring and debugging
+
+  M140:
+    summary: Set bed temperature
+    description: >
+      Set the target temperature for the heated bed.
+
+      **Temperature Range:**
+      - Typical range: 0-100°C for PLA/ABS materials
+      - No explicit maximum in code (hardware-limited)
+      - Recommended maximum: ~100°C
+
+      **State-Dependent Behavior:**
+      - READY: Sends command immediately
+      - PAUSED: Sends command immediately
+      - PRINTING: Queues command for later execution
+
+      **No Offset Support:**
+      Unlike extruder temperature, bed temperature has no user-configurable offset.
+    args:
+      S: int # Target bed temperature in Celsius (0-100°C typical)
+    response: "ack: " with command echo
+    example: "~M140 S60"
+    example2: "~M140 S0"
+    notes: >
+      - Recommended: PLA=60°C, ABS=100°C
+      - Bed heating is asynchronous
+      - Use M105 to monitor actual temperature
+      - Queued during printing
+
+  M144:
+    summary: LED control - Internal command (use M146 instead)
+    description: >
+      **Internal Command** - Use M146 for user-facing LED control.
+
+      M144 is sent by the firmware to turn LEDs ON.
+      **WARNING:** This command likely writes to EEPROM. Frequent usage can degrade flash memory.
+      Always use M146 for safe/standard toggling.
+    args: None
+    response: "cmd_M144 " with response
+    example: "~M144"
+    notes: >
+      - Internal command - use M146 instead
+      - Turns LEDs ON
+      - Sent by M146 when parameter is NOT "0"
+
+  M145:
+    summary: LED control - Internal command (use M146 instead)
+    description: >
+      **Internal Command** - Use M146 for user-facing LED control.
+
+      M145 is sent by the firmware to turn LEDs OFF.
+      **WARNING:** This command likely writes to EEPROM. Frequent usage can degrade flash memory.
+      Always use M146 for safe/standard toggling.
+    args: None
+    response: "cmd_M145 " with response
+    example: "~M145"
+    notes: >
+      - Internal command - use M146 instead
+      - Turns LEDs OFF
+      - Sent by M146 when parameter is "0"
+
+  M146:
+    summary: Control accessory LEDs (on/off)
+    description: >
+      **SAFE/PREFERRED** method to control add-on LED light bars.
+
+      This command abstracts the internal M144/M145 calls and is the safe entry point
+      for LED control.
+
+      **Base Model:**
+      Adventurer 3 does NOT have built-in LEDs.
+      This command only works if LED accessory is installed.
+
+      **Command Mapping:**
+      - `M146 0` → Sends M145 to printer (LEDs OFF)
+      - `M146 1` → Sends M144 to printer (LEDs ON)
+      - `M146 255` → Sends M144 to printer (LEDs ON)
+
+      **LED Control:**
+      - Only on/off control (no brightness adjustment)
+      - No color selection (single color)
+      - Controlled via M144 (ON) and M145 (OFF) commands
+    args:
+      parameter: string # "0" for OFF, any other value for ON
+    response: "ack: " with command echo
+    example: "~M146 1"
+    example2: "~M146 0"
+    notes: >
+      - Adventurer 3 has no built-in LEDs (accessory only)
+      - On/off control only, no brightness/color
+      - M146 0 = OFF, M146 1+ = ON
+      - Uses M144/M145 internally but is the standard API path
+
+  # --- FlashForge Custom Commands (Network) ---
+
+  M601:
+    summary: Initialize WiFi/multicast connection
+    description: >
+      Initialize WiFi multicast connection and set connection status.
+
+      **Connection Types:**
+      - Type 1 → Multicast status: 2
+      - Type 2 → Multicast status: 3
+      - Other/Unknown → Multicast status: 0
+
+      **Behavior:**
+      - If already connected: Returns error "Error: have been connected"
+      - On success: Sets multicast status and triggers M601 signal
+      - Starts connection timer
+      - Updates connection state flags
+
+      **Response Format:**
+      ```
+      CMD M601 Received.
+      ok (success)
+      ```
+
+      ```
+      Error: have been connected (already connected)
+      ```
+    args: None
+    response: >
+      CMD M601 Received.
+      ok
+    example: "~M601"
+    notes: >
+      - Initializes multicast connection
+      - Error if already connected
+      - Network-specific command
+
+  M602:
+    summary: Disconnect WiFi/multicast connection
+    description: >
+      Close WiFi/multicast connection and reset connection state.
+
+      **Behavior:**
+      - Sets multicast status to 0 (disconnected)
+      - Triggers `sig_M602()` signal
+      - Resets connection state flags
+      - Stops connection timer
+      - Closes upload dialog
+    args: None
+    response: >
+      CMD M602 Received.
+      ok
+    example: "~M602"
+    notes: >
+      - Disconnects multicast connection
+      - Resets connection state
+      - Complements M601
+
+  M610:
+    summary: Set printer name (network identification)
+    description: >
+      Update the printer's network name for mDNS/bonjour discovery.
+
+      **Behavior:**
+      - Updates printer name in serial number file
+      - Triggers printer name change in UI
+      - May reconnect to network with new name
+
+      **Use Cases:**
+      - Network identification
+      - Printer labeling
+      - Bonjour/mDNS discovery
+    args:
+      printer_name: string # New name for the printer
+    response: >
+      CMD M610 Received.
+      ok
+    example: "~M610 My 3D Printer"
+    notes: >
+      - Updates serial number file (persistent)
+      - **Side Effect:** Triggers network service reconnection (`reconnectedMultiCase`) which may briefly drop connection.
+      - Confirmed by RE to be the canonical rename method.
+
+  M611:
+    summary: Custom network command (implementation unclear)
+    description: >
+      FlashForge-proprietary network command for Adventurer 3.
+
+      **Status:** Implementation not fully analyzed. Likely used for:
+      - Network configuration
+      - WiFi settings management
+      - Cloud service connection
+
+      **Response:** Logs command receipt with "cmd_M611" prefix.
+    args: None (implementation-specific)
+    response: "cmd_M611 " with response
+    example: "~M611"
+    notes: >
+      - FlashForge proprietary command
+      - Details require further analysis
+
+  M612:
+    summary: Custom network command (implementation unclear)
+    description: >
+      FlashForge-proprietary network command for Adventurer 3.
+
+      **Status:** Implementation not fully analyzed. Likely used for:
+      - Network configuration
+      - WiFi settings management
+      - Cloud service connection
+
+      **Response:** Logs command receipt with "cmd_M612" prefix.
+    args: None (implementation-specific)
+    response: "cmd_M612 " with response
+    example: "~M612"
+    notes: >
+      - FlashForge proprietary command
+      - Details require further analysis
+
+  # --- FlashForge Custom Commands (Printer) ---
+
+  M650:
+    summary: Get printer model identification
+    description: >
+      Return hardware version information for the Adventurer 3.
+
+      **Response Format:**
+      ```
+      CMD M650 Received.
+      X: 1.0 Y: 0.5
+      ```
+
+      **Model ID Interpretation:**
+      - X: 1.0 - Major hardware revision
+      - Y: 0.5 - Minor hardware revision or variant
+
+      **Purpose:**
+      - Printer identification
+      - Hardware variant detection
+      - Compatibility checking
+      - Firmware validation
+
+      **Note:**
+      These values are hardcoded in the firmware, not read from hardware.
+    args: None
+    response: >
+      CMD M650 Received.
+      X: 1.0 Y: 0.5
+    example: "~M650"
+    notes: >
+      - Hardware version: 1.0/0.5
+      - Hardcoded in firmware
+      - Used for printer identification
+
+  M651:
+    summary: Custom printer command (implementation unclear)
+    description: >
+      FlashForge-proprietary printer command for Adventurer 3.
+
+      **Status:** Implementation not fully analyzed. Sent to serial port and response checked.
+
+      **Response:** Logs command receipt with "cmd_M651" prefix.
+    args: None (implementation-specific)
+    response: "cmd_M651 " with response
+    example: "~M651"
+    notes: >
+      - FlashForge proprietary command
+      - Sent to serial port with response check
+      - Details require further analysis
+
+  M652:
+    summary: Custom printer command (implementation unclear)
+    description: >
+      FlashForge-proprietary printer command for Adventurer 3.
+
+      **Status:** Implementation not fully analyzed. Sent to serial port with params.
+
+      **Response:** Logs command receipt with "cmd_M652" prefix.
+    args: None (implementation-specific)
+    response: "cmd_M652 " with response
+    example: "~M652"
+    notes: >
+      - FlashForge proprietary command
+      - Sent to serial port with params
+      - Details require further analysis
+
+  M653:
+    summary: Custom printer command with parameters
+    description: >
+      FlashForge-proprietary printer command for Adventurer 3.
+
+      **Status:** Implementation not fully analyzed. Accepts parameters and sends to serial port.
+
+      **Response:** "ack: ok" on success.
+    args:
+      params: string # Command-specific parameters
+    response: "ack: ok"
+    example: "~M653 <params>"
+    notes: >
+      - FlashForge proprietary command
+      - Accepts parameters
+      - Details require further analysis
+
+  M654:
+    summary: Custom printer command with parameters
+    description: >
+      FlashForge-proprietary printer command for Adventurer 3.
+
+      **Status:** Implementation not fully analyzed. Accepts parameters and sends to serial port.
+
+      **Response:** "ack: ok" on success.
+    args:
+      params: string # Command-specific parameters
+    response: "ack: ok"
+    example: "~M654 <params>"
+    notes: >
+      - FlashForge proprietary command
+      - Accepts parameters
+      - Details require further analysis
+
+  # --- FlashForge Custom Commands (File & System) ---
+
+  M661:
+    summary: List all print files on SD card
+    description: >
+      Return a list of all printable files stored on the printer's SD card (/data directory).
+
+      **File Extension Filtering:**
+      Only returns files with these extensions:
+      - `.g` - G-code files
+      - `.gx` - FlashForge encrypted G-code format
+      - `.gcode` - Standard G-code files
+
+      **Response Format:**
+      **Success:**
+      ```
+      CMD M661 Received.
+      info_list.size: <count>
+      <filename1>
+      <filename2>
+      ...
+      ```
+
+      **No Files:**
+      ```
+      CMD M661 Error.
+      ```
+    args: None
+    response: >
+      CMD M661 Error.
+      info_list.size: <count>
+      <filename1>
+      <filename2>
+      ...
+    example: "~M661"
+    notes: >
+      - Searches in /data directory
+      - Filters by supported extensions
+      - Returns count followed by filenames
+      - **Internal Implementation:** File count is calculated via `(size >> 2) * -0x33333333`, effectively dividing the vector size by 12 bytes per entry.
+      - Used for file browser UI
+
+  M662:
+    summary: Get thumbnail image from G-code file
+    description: >
+      Extract embedded thumbnail image from a G-code file header.
+
+      **Image Format:**
+      - PNG format
+      - Embedded in G-code file header
+      - Size varies (typically ~60-800 bytes)
+
+      **Fallback:**
+      If no embedded image exists, returns default image from:
+      `/usr/share/G_File.png`
+
+      **Binary Data Format:**
+      ```
+      uint32_t magic: 0x2a2a2aa2 (big-endian: 0xa2a22a2a)
+      uint32_t length: image data length (big-endian)
+      uint8_t data[length]: PNG image bytes
+      ```
+
+      **Response Format:**
+      **Success:**
+      ```
+      CMD M662 Received.
+      ack header length: <header_length>
+      <binary PNG data>
+      ```
+
+      **Error:**
+      ```
+      CMD M662 Received.
+      Error: File not exists
+      ```
+    args:
+      filename: string # Name of file (with or without .g/.gcode extension)
+    response: >
+      CMD M662 Received.
+      Error: File not exists
+
+      OR
+
+      CMD M662 Received.
+      ack header length: <length>
+      <binary PNG data>
+    example: "~M662 calibration.g"
+    notes: >
+      - Extracts thumbnail from G-code header
+      - Returns PNG image data
+      - Falls back to default image if missing
+      - Used for UI thumbnails
+      - Binary response format with magic number
+
+  M663:
+    summary: Get current position with extrusion flow
+    description: >
+      Query the current print head position with extrusion flow information.
+
+      **Response Format:**
+      ```
+      CMD M663 Received.
+      ok
+      ```
+
+      **Note:**
+      This command is similar to M114 but may provide enhanced position data.
+      Actual response format needs verification with live printer.
+    args: None
+    response: >
+      CMD M663 Received.
+      ok
+    example: "~M663"
+    notes: >
+      - Enhanced position query
+      - May include extrusion flow data
+      - Similar to M114 but with more details
+
+# Protocol Details
+protocol:
+  port: 8899
+  command_prefix: "~"
+  line_terminator: "\\r\\n"
+  response_prefix: "ack:"
+  max_connections: 10
+  connection_timeout: 30 # seconds
+  recv_timeout: 5 # seconds
+  binary_mode: "M28/M29" # File upload uses binary mode
+
+# Build Volume
+build_volume:
+  x: 150  # mm
+  y: 150  # mm
+  z: 150  # mm
+  origin: "front-left corner" # (0,0,0)
+
+# Temperature Limits
+temperature_limits:
+  extruder_max: 265  # Celsius (configurable)
+  bed_max: 100       # Celsius (typical)
+  extruder_min: 0       # Celsius (room temp)
+  bed_min: 0           # Celsius (room temp)
+
+# Fan Specifications
+fan:
+  type: "part cooling"
+  control: "on/off only"
+  speed_range: "fixed (100% when on)"
+  extruder_fan: "automatic (hotend temperature controlled)"
+
+# LED Support
+led:
+  built_in: false
+  accessory_only: true
+  control: "on/off via M146"
+  internal_commands: "M144 (ON), M145 (OFF)"
+
+# Print File Support
+file_formats:
+  supported:
+    - ".g"    # G-code files
+    - ".gx"   # FlashForge encrypted G-code
+    - ".gcode" # Standard G-code
+  storage_path: "/data"
+  upload_protocol: "binary M28/M29"
+  max_filesize: "4GB (FAT32 limit)"
+
+# Network Services
+network:
+  tcp_port: 8899
+  http_port: 8080
+  http_purpose: "Camera streaming (MJPG)"
+  multicast: "Yes (M601/M602 control)"
+  authentication: "None (port 8899 unauthenticated)"
+
+# Firmware Information
+firmware:
+  version: "v1.3.7 20230725"
+  machine_type: "FlashForge Adventurer III"
+  model_id: "X: 1.0 Y: 0.5"
+  serial_source: "Configuration file (SerialNoFile)"
+  mac_source: "/etc/MAC file"
+
+# Comparison with 5M/AD5X Series
+differences_from_5m_series:
+  - "No HTTP REST API on port 8898 (TCP only control)"
+  - "No authentication required on port 8899"
+  - "Fan control is on/off only (no variable M106 S0-255)"
+  - "No built-in camera (accessory LED support only)"
+  - "Different set of custom M-codes (600/66x series)"
+  - "M108 command is stubbed out (non-functional)"
+  - "No material station or multi-color printing"
+  - "Simpler networking (M601/M602 only)"
+  - "No air filtration or TVOC monitoring"
+  - "Build volume: 150x150x150mm (smaller than newer models)"
