@@ -3,7 +3,13 @@
 // window.INGRESS_PATH is injected at runtime by server.js when running as a
 // Home Assistant add-on. It is the URL prefix HA uses for the ingress proxy
 // (e.g. "/api/hassio_ingress/abc123"). When running standalone it is undefined.
-const BASE = (window.INGRESS_PATH || '').replace(/\/$/, '');
+// Fallback: detect ingress prefix directly from current URL path.
+function detectIngressFromPath(pathname) {
+  const match = pathname.match(/^\/api\/hassio_ingress\/[^/]+/);
+  return match ? match[0] : '';
+}
+const detectedIngress = detectIngressFromPath(window.location.pathname);
+const BASE = (window.INGRESS_PATH || detectedIngress || '').replace(/\/$/, '');
 
 /* ── State ───────────────────────────────────────────────────────────────── */
 let currentJobID = null;
@@ -219,7 +225,12 @@ async function loadFiles() {
   fileList.innerHTML = '<p class="hint">Caricamento…</p>';
   try {
     const res = await fetch(`${BASE}/api/files`);
-    const json = await res.json();
+    const contentType = res.headers.get('content-type') || '';
+    const text = await res.text();
+    const json = contentType.includes('application/json') ? JSON.parse(text) : null;
+    if (!json) {
+      throw new Error(`Risposta non JSON (HTTP ${res.status})`);
+    }
     const files = json.gcodeList || [];
     if (!files.length) {
       fileList.innerHTML = '<p class="hint">Nessun file trovato nella stampante.</p>';

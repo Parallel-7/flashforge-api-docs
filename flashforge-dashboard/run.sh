@@ -11,6 +11,7 @@ export SERIAL_NUMBER="$(bashio::config 'serial_number')"
 export CHECK_CODE="$(bashio::config 'check_code')"
 export PORT="8099"
 export NODE_ENV="production"
+export INGRESS_PATH="$(bashio::addon.ingress_entry)"
 
 if bashio::config.is_empty 'printer_ip'; then
   bashio::log.warning "printer_ip is not configured. Set it in the add-on Configuration tab."
