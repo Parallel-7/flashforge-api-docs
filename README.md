@@ -32,7 +32,6 @@ Dashboard locale per stampanti FlashForge AD5M / AD5X / 5M Pro con:
 ├── repository.yaml
 └── flashforge-dashboard/
     ├── config.yaml
-    ├── build.yaml
     ├── Dockerfile
     ├── run.sh
     ├── server.js
