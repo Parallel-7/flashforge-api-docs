@@ -22,6 +22,7 @@ const badge          = document.getElementById('status-badge');
 const cameraImg      = document.getElementById('camera-img');
 const cameraPlaceholder = document.getElementById('camera-placeholder');
 const btnCameraOn    = document.getElementById('btn-camera-on');
+const btnCameraRefresh = document.getElementById('btn-camera-refresh');
 const btnCameraOff   = document.getElementById('btn-camera-off');
 const sFname         = document.getElementById('s-filename');
 const sProgress      = document.getElementById('s-progress');
@@ -150,24 +151,25 @@ function updateUI(d) {
   btnResume.disabled = !isPaused;
   btnStop.disabled   = !(isPrinting || isPaused);
 
-  // Camera: if the printer reports a stream URL, auto-enable
-  if (d.cameraStreamUrl && !cameraActive) {
-    enableCamera();
-  }
 }
 
 /* ── Camera ──────────────────────────────────────────────────────────────── */
-function enableCamera() {
+function updateCameraStream() {
   cameraImg.src = `${BASE}/api/camera/stream?t=${Date.now()}`;
+}
+function enableCamera() {
+  updateCameraStream();
   cameraImg.classList.add('active');
   cameraPlaceholder.classList.add('hidden');
   cameraActive = true;
+  btnCameraRefresh.disabled = false;
 }
 function disableCamera() {
   cameraImg.src = '';
   cameraImg.classList.remove('active');
   cameraPlaceholder.classList.remove('hidden');
   cameraActive = false;
+  btnCameraRefresh.disabled = true;
 }
 
 btnCameraOn.addEventListener('click', async () => {
@@ -175,6 +177,10 @@ btnCameraOn.addEventListener('click', async () => {
     await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'open' }) });
   } catch (_) { /* ignore – try to show stream anyway */ }
   enableCamera();
+});
+
+btnCameraRefresh.addEventListener('click', () => {
+  if (cameraActive) updateCameraStream();
 });
 
 btnCameraOff.addEventListener('click', async () => {
