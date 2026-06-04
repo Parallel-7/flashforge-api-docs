@@ -150,6 +150,7 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+#s-layer { font-size: 16px; }
 
 /* ── Progress bar ────────────────────────────────────────────────────────── */
 .progress-bar-wrap {
@@ -337,6 +338,63 @@ footer {
   color: var(--text-muted);
   max-width: 1400px;
   margin: 0 auto;
+}
+
+@media (max-width: 640px) {
+  header { padding: 0 14px; }
+  header h1 { font-size: 15px; }
+  .badge { font-size: 11px; padding: 4px 10px; }
+
+  main {
+    margin: 14px auto;
+    padding: 0 14px;
+    gap: 14px;
+  }
+
+  .card { padding: 14px; }
+
+  .camera-controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .stat-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .stat { padding: 9px 10px; }
+  .stat-value { font-size: 15px; white-space: normal; }
+  #s-layer { font-size: 14px; }
+
+  .temp-grid {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .temp-card { padding: 8px 10px; }
+  .temp-value { font-size: 18px; }
+
+  .print-controls .btn {
+    flex: 1 1 100%;
+  }
+
+  .file-list { max-height: 240px; }
+  .file-item { padding: 8px 10px; gap: 8px; }
+
+  .modal-box {
+    width: calc(100vw - 28px);
+    padding: 16px;
+  }
+  .modal-actions {
+    flex-direction: column;
+  }
+
+  footer {
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+    padding: 10px 14px;
+  }
 }
 
 /* ── Scrollbar ───────────────────────────────────────────────────────────── */
