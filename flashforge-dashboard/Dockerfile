@@ -1,5 +1,5 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
+ARG BUILD_FROM=docker.io/library/node:22-alpine
+FROM ${BUILD_FROM}
 
 # Copy application
 WORKDIR /app
