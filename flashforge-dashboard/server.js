@@ -102,7 +102,7 @@ app.get('/api/status', requireConfig, async (req, res) => {
 
 /**
  * POST /api/control
- * Body: { action: "pause"|"resume"|"stop", jobID: "..." }
+ * Body: { action: "pause"|"continue"|"cancel", jobID?: "..." }
  */
 app.post('/api/control', requireConfig, async (req, res) => {
   const { action, jobID } = req.body;

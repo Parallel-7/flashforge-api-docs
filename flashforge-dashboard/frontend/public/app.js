@@ -114,7 +114,7 @@ function updateUI(d) {
   // Badge
   const statusMap = {
     READY: ['badge--idle', 'PRONTA'],
-    BUSY: ['badge--printing', 'BUSY'],
+    BUSY: ['badge--printing', 'OCCUPATA'],
     HEATING: ['badge--printing', 'RISCALDAMENTO'],
     PRINTING: ['badge--printing', 'STAMPA'],
     PAUSING:  ['badge--paused',   'IN PAUSA'],
