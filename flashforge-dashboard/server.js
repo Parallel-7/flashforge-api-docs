@@ -1,6 +1,7 @@
 'use strict';
 
-require('dotenv').config();
+// Note: no dotenv — environment variables are injected by run.sh via bashio.
+
 const express = require('express');
 const multer = require('multer');
 const fetch = require('node-fetch');
@@ -9,10 +10,16 @@ const path = require('path');
 const http = require('http');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8099;
 const PRINTER_IP = process.env.PRINTER_IP;
 const SERIAL_NUMBER = process.env.SERIAL_NUMBER;
 const CHECK_CODE = process.env.CHECK_CODE;
+
+// HA Ingress sets this env var to the URL prefix it uses when proxying
+// (e.g. "/api/hassio_ingress/abc123"). The frontend needs this to build
+// correct absolute URLs for fetch() calls and the camera stream.
+const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\/$/, '');
+
 const PRINTER_API = `http://${PRINTER_IP}:8898`;
 const CAMERA_URL = `http://${PRINTER_IP}:8080/?action=stream`;
 
@@ -48,7 +55,7 @@ async function printerPost(endpoint, body = {}) {
 function requireConfig(req, res, next) {
   if (!PRINTER_IP || !SERIAL_NUMBER || !CHECK_CODE) {
     return res.status(503).json({
-      error: 'Printer not configured. Copy .env.example to .env and fill in PRINTER_IP, SERIAL_NUMBER, CHECK_CODE.',
+      error: 'Printer not configured. Set printer_ip, serial_number and check_code in the add-on Configuration tab.',
     });
   }
   next();
@@ -241,17 +248,32 @@ app.get('/api/config', (req, res) => {
     configured: !!(PRINTER_IP && SERIAL_NUMBER && CHECK_CODE),
     printerIp: PRINTER_IP || null,
     cameraUrl: PRINTER_IP ? CAMERA_URL : null,
+    ingressPath: INGRESS_PATH,
   });
 });
 
-// ── Serve frontend for all other routes ─────────────────────────────────────
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'frontend', 'public', 'index.html'));
-});
+// ── Serve index.html dynamically with injected INGRESS_PATH ─────────────────
+// HA Ingress strips the path prefix before forwarding requests, so all backend
+// routes work at /api/... as normal. However, browser-side fetch() calls use
+// absolute paths (e.g. /api/status) which would bypass the ingress prefix.
+// We inject window.INGRESS_PATH into the HTML so the frontend can prefix them.
+const INDEX_HTML_PATH = path.join(__dirname, 'frontend', 'public', 'index.html');
+const indexHtmlBase = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 
+function serveIndex(req, res) {
+  const script = `<script>window.INGRESS_PATH = '${INGRESS_PATH}';</script>\n`;
+  const html = indexHtmlBase.replace('</head>', `  ${script}</head>`);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+}
+
+app.get('*', serveIndex);
+
+// ── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`FlashForge Web App running at http://localhost:${PORT}`);
+  console.log(`FlashForge Dashboard (HA add-on) running on port ${PORT}`);
+  console.log(`Ingress path: ${INGRESS_PATH || '(none)'}`);
   if (!PRINTER_IP || !SERIAL_NUMBER || !CHECK_CODE) {
-    console.warn('⚠  PRINTER_IP, SERIAL_NUMBER or CHECK_CODE not set. Copy .env.example → .env and configure them.');
+    console.warn('⚠  printer_ip, serial_number or check_code not set. Configure them in the HA add-on Configuration tab.');
   }
 });
