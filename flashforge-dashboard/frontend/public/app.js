@@ -16,13 +16,13 @@ let currentJobID = null;
 let currentStatus = null;
 let pollingTimer = null;
 let cameraActive = false;
+let cameraStreamUrl = null;
 
 /* ── DOM refs ────────────────────────────────────────────────────────────── */
 const badge          = document.getElementById('status-badge');
 const cameraImg      = document.getElementById('camera-img');
 const cameraPlaceholder = document.getElementById('camera-placeholder');
 const btnCameraOn    = document.getElementById('btn-camera-on');
-const btnCameraRefresh = document.getElementById('btn-camera-refresh');
 const btnCameraOff   = document.getElementById('btn-camera-off');
 const sFname         = document.getElementById('s-filename');
 const sProgress      = document.getElementById('s-progress');
@@ -154,22 +154,18 @@ function updateUI(d) {
 }
 
 /* ── Camera ──────────────────────────────────────────────────────────────── */
-function updateCameraStream() {
-  cameraImg.src = `${BASE}/api/camera/stream?t=${Date.now()}`;
-}
 function enableCamera() {
-  updateCameraStream();
+  if (!cameraStreamUrl) return;
+  cameraImg.src = cameraStreamUrl;
   cameraImg.classList.add('active');
   cameraPlaceholder.classList.add('hidden');
   cameraActive = true;
-  btnCameraRefresh.disabled = false;
 }
 function disableCamera() {
   cameraImg.src = '';
   cameraImg.classList.remove('active');
   cameraPlaceholder.classList.remove('hidden');
   cameraActive = false;
-  btnCameraRefresh.disabled = true;
 }
 
 btnCameraOn.addEventListener('click', async () => {
@@ -177,10 +173,6 @@ btnCameraOn.addEventListener('click', async () => {
     await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'open' }) });
   } catch (_) { /* ignore – try to show stream anyway */ }
   enableCamera();
-});
-
-btnCameraRefresh.addEventListener('click', () => {
-  if (cameraActive) updateCameraStream();
 });
 
 btnCameraOff.addEventListener('click', async () => {
@@ -406,11 +398,12 @@ function setUploadPct(pct) {
   // Check configuration
   try {
     const cfg = await fetch(`${BASE}/api/config`).then(r => r.json());
+    if (cfg.cameraUrl) cameraStreamUrl = cfg.cameraUrl;
     if (!cfg.configured) {
       badge.textContent = 'NON CONFIGURATO';
       badge.className = 'badge badge--error';
       document.querySelector('main').insertAdjacentHTML('afterbegin',
-        `<div class="card" style="grid-column:1/-1;color:var(--warning)">
+        `<div class="card" style="color:var(--warning)">
           ⚠️ La stampante non è configurata.
           Vai su <strong>Impostazioni → Add-on → FlashForge Dashboard → Configurazione</strong>
           e inserisci <code>printer_ip</code>, <code>serial_number</code> e <code>check_code</code>.

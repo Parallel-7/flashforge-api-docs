@@ -26,9 +26,8 @@
         </div>
       </div>
       <div class="camera-controls">
-        <button id="btn-camera-on" class="btn btn--secondary">Attiva camera</button>
-        <button id="btn-camera-refresh" class="btn btn--secondary" disabled>Aggiorna camera</button>
-        <button id="btn-camera-off" class="btn btn--secondary">Spegni camera</button>
+        <button id="btn-camera-on" class="btn btn--secondary">▶ Attiva camera</button>
+        <button id="btn-camera-off" class="btn btn--secondary">⏹ Spegni camera</button>
       </div>
     </section>
 
@@ -36,30 +35,11 @@
     <section class="card card--status">
       <h2>Stato stampa</h2>
 
-      <div class="stat-grid">
-        <div class="stat">
-          <span class="stat-label">File</span>
-          <span class="stat-value" id="s-filename">—</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Progresso</span>
-          <span class="stat-value" id="s-progress">—</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Layer</span>
-          <span class="stat-value stat-value--compact" id="s-layer">—</span>
-        </div>
-        <div class="stat">
-          <span class="stat-label">Tempo rimanente</span>
-          <span class="stat-value" id="s-time">—</span>
-        </div>
-      </div>
-
       <div class="progress-bar-wrap">
         <div class="progress-bar" id="progress-bar"></div>
       </div>
 
-      <div class="temp-grid">
+      <div class="pairs-grid">
         <div class="temp-card">
           <span class="temp-label">🔥 Ugello</span>
           <span class="temp-value" id="t-nozzle">—</span>
@@ -75,13 +55,26 @@
           <span class="temp-value" id="t-chamber">—</span>
           <span class="temp-target" id="t-chamber-target"></span>
         </div>
-      </div>
-
-      <!-- Print controls -->
-      <div class="print-controls" id="print-controls">
+        <div class="stat">
+          <span class="stat-label">Layer</span>
+          <span class="stat-value stat-value--compact" id="s-layer">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">File</span>
+          <span class="stat-value" id="s-filename">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Progresso</span>
+          <span class="stat-value" id="s-progress">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Tempo rimanente</span>
+          <span class="stat-value" id="s-time">—</span>
+        </div>
+        <div><!-- spacer: keeps pairs-grid alignment before controls row --></div>
         <button id="btn-pause" class="btn btn--warning" disabled>⏸ Pausa</button>
         <button id="btn-resume" class="btn btn--success" disabled>▶ Riprendi</button>
-        <button id="btn-stop" class="btn btn--danger" disabled>⏹ Stop</button>
+        <button id="btn-stop" class="btn btn--danger btn--full" disabled>⏹ Stop</button>
       </div>
       <div id="ctrl-message" class="ctrl-message"></div>
     </section>
