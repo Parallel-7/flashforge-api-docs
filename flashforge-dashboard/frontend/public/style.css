@@ -36,7 +36,7 @@ header {
 }
 .header-inner {
   width: 100%;
-  max-width: 1400px;
+  max-width: 860px;
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -60,17 +60,12 @@ header h1 { font-size: 18px; font-weight: 600; letter-spacing: .5px; }
 
 /* ── Main grid ──────────────────────────────────────────────────────────── */
 main {
-  max-width: 1400px;
+  max-width: 860px;
   margin: 24px auto;
   padding: 0 24px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto auto;
+  display: flex;
+  flex-direction: column;
   gap: 20px;
-}
-
-@media (max-width: 860px) {
-  main { grid-template-columns: 1fr; }
 }
 
 /* ── Card ────────────────────────────────────────────────────────────────── */
@@ -90,7 +85,6 @@ main {
 }
 
 /* ── Camera ─────────────────────────────────────────────────────────────── */
-.card--camera { grid-column: 1; }
 
 .camera-wrap {
   width: 100%;
@@ -121,14 +115,6 @@ main {
 .camera-controls { display: flex; gap: 10px; }
 
 /* ── Stat grid ──────────────────────────────────────────────────────────── */
-.card--status { grid-column: 2; }
-
-.stat-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
-}
 .stat {
   background: var(--surface2);
   border-radius: 8px;
@@ -168,14 +154,18 @@ main {
   transition: width .5s ease;
 }
 
-/* ── Temp cards ─────────────────────────────────────────────────────────── */
-.temp-grid {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
+/* ── Pairs grid (temps + stats + controls in 2 columns) ─────────────────── */
+.pairs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
 }
+.pairs-grid .btn { width: 100%; }
+.btn--full { grid-column: 1 / -1; }
+
+/* ── Temp cards ─────────────────────────────────────────────────────────── */
 .temp-card {
-  flex: 1;
   background: var(--surface2);
   border-radius: 8px;
   padding: 12px;
@@ -188,7 +178,6 @@ main {
 .temp-target { font-size: 11px; color: var(--text-muted); }
 
 /* ── Print controls ─────────────────────────────────────────────────────── */
-.print-controls { display: flex; gap: 10px; flex-wrap: wrap; }
 .ctrl-message { margin-top: 10px; font-size: 12px; color: var(--text-muted); min-height: 16px; }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
@@ -212,7 +201,6 @@ main {
 .btn--danger    { background: var(--danger);   color: #fff; }
 
 /* ── File list ──────────────────────────────────────────────────────────── */
-.card--files { grid-column: 1; }
 
 .files-toolbar { margin-bottom: 12px; }
 
@@ -281,7 +269,6 @@ main {
 .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
 
 /* ── Upload ─────────────────────────────────────────────────────────────── */
-.card--upload { grid-column: 2; }
 
 .file-drop-area {
   border: 2px dashed var(--border);
@@ -336,7 +323,7 @@ footer {
   justify-content: space-between;
   font-size: 11px;
   color: var(--text-muted);
-  max-width: 1400px;
+  max-width: 860px;
   margin: 0 auto;
 }
 
@@ -353,30 +340,17 @@ footer {
 
   .card { padding: 14px; }
 
-  .camera-controls {
-    display: grid;
+  .pairs-grid {
     grid-template-columns: 1fr;
-    gap: 8px;
   }
+  .btn--full { grid-column: 1; }
 
-  .stat-grid {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
   .stat { padding: 9px 10px; }
   .stat-value { font-size: 15px; white-space: normal; }
   .stat-value--compact { font-size: 14px; }
 
-  .temp-grid {
-    flex-direction: column;
-    gap: 8px;
-  }
   .temp-card { padding: 8px 10px; }
   .temp-value { font-size: 18px; }
-
-  .print-controls .btn {
-    flex: 1 1 100%;
-  }
 
   .file-list { max-height: 240px; }
   .file-item { padding: 8px 10px; gap: 8px; }
