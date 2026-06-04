@@ -34,19 +34,34 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 /**
  * POST to the printer's HTTP REST API with standard auth fields.
+ * Times out after PRINTER_TIMEOUT_MS to avoid hanging indefinitely.
  */
+const PRINTER_TIMEOUT_MS = 8000;
+
 async function printerPost(endpoint, body = {}) {
   const payload = { serialNumber: SERIAL_NUMBER, checkCode: CHECK_CODE, ...body };
-  const res = await fetch(`${PRINTER_API}${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Printer returned ${res.status}: ${text}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PRINTER_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${PRINTER_API}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Printer returned ${res.status}: ${text}`);
+    }
+    return res.json();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`Printer did not respond within ${PRINTER_TIMEOUT_MS / 1000}s (${PRINTER_IP})`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 /**

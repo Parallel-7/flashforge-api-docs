@@ -82,11 +82,18 @@ async function fetchStatus() {
   try {
     const res = await fetch(`${BASE}/api/status`);
     const json = await res.json();
+    if (!res.ok || json.error) {
+      badge.textContent = 'Errore connessione';
+      badge.className = 'badge badge--error';
+      lastUpdate.textContent = `Errore: ${json.error || res.statusText}`;
+      return;
+    }
     if (json.detail) updateUI(json.detail);
     lastUpdate.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`;
   } catch (e) {
     badge.textContent = 'Errore connessione';
     badge.className = 'badge badge--error';
+    lastUpdate.textContent = `Errore: ${e.message}`;
   }
 }
 
