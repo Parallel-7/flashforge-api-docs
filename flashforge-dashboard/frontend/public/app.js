@@ -162,12 +162,14 @@ function enableCamera() {
   cameraImg.classList.add('active');
   cameraPlaceholder.classList.add('hidden');
   cameraActive = true;
+  btnCameraRefresh.disabled = false;
 }
 function disableCamera() {
   cameraImg.src = '';
   cameraImg.classList.remove('active');
   cameraPlaceholder.classList.remove('hidden');
   cameraActive = false;
+  btnCameraRefresh.disabled = true;
 }
 
 btnCameraOn.addEventListener('click', async () => {
