@@ -1,0 +1,7 @@
+build_from:
+  amd64:   "ghcr.io/home-assistant/amd64-base-nodejs:20"
+  aarch64: "ghcr.io/home-assistant/aarch64-base-nodejs:20"
+  armv7:   "ghcr.io/home-assistant/armv7-base-nodejs:20"
+  armhf:   "ghcr.io/home-assistant/armhf-base-nodejs:20"
+
+squash: false
