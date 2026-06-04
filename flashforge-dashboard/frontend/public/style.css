@@ -56,6 +56,7 @@ header h1 { font-size: 18px; font-weight: 600; letter-spacing: .5px; }
 .badge--idle     { background: rgba(122,127,154,.2); color: var(--text-muted); }
 .badge--printing { background: rgba(79,142,247,.2);  color: var(--accent); }
 .badge--paused   { background: rgba(240,165,0,.2);   color: var(--warning); }
+.badge--success  { background: rgba(62,207,116,.2);  color: var(--success); }
 .badge--error    { background: rgba(224,76,76,.2);   color: var(--danger); }
 
 /* ── Main grid ──────────────────────────────────────────────────────────── */
@@ -120,6 +121,7 @@ main {
   border-radius: 8px;
   padding: 12px 14px;
 }
+.stat--full { grid-column: 1 / -1; }
 .stat-label {
   display: block;
   font-size: 11px;
@@ -157,25 +159,26 @@ main {
 /* ── Pairs grid (temps + stats + controls in 2 columns) ─────────────────── */
 .pairs-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 12px;
 }
 .pairs-grid .btn { width: 100%; }
-.btn--full { grid-column: 1 / -1; }
 
 /* ── Temp cards ─────────────────────────────────────────────────────────── */
 .temp-card {
   background: var(--surface2);
   border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px 10px;
 }
+.temp-card--full { grid-column: 1 / -1; }
 .temp-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
-.temp-value { font-size: 22px; font-weight: 700; }
-.temp-target { font-size: 11px; color: var(--text-muted); }
+.temp-value { font-size: 18px; font-weight: 700; min-width: 0; }
+.temp-target { font-size: 11px; color: var(--text-muted); justify-self: end; }
 
 /* ── Print controls ─────────────────────────────────────────────────────── */
 .ctrl-message { margin-top: 10px; font-size: 12px; color: var(--text-muted); min-height: 16px; }
@@ -340,17 +343,12 @@ footer {
 
   .card { padding: 14px; }
 
-  .pairs-grid {
-    grid-template-columns: 1fr;
-  }
-  .btn--full { grid-column: 1; }
-
   .stat { padding: 9px 10px; }
   .stat-value { font-size: 15px; white-space: normal; }
   .stat-value--compact { font-size: 14px; }
 
   .temp-card { padding: 8px 10px; }
-  .temp-value { font-size: 18px; }
+  .temp-value { font-size: 16px; }
 
   .file-list { max-height: 240px; }
   .file-item { padding: 8px 10px; gap: 8px; }

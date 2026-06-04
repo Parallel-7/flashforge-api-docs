@@ -38,6 +38,7 @@ const tChamberTarget = document.getElementById('t-chamber-target');
 const btnPause       = document.getElementById('btn-pause');
 const btnResume      = document.getElementById('btn-resume');
 const btnStop        = document.getElementById('btn-stop');
+const btnClearState  = document.getElementById('btn-clear-state');
 const ctrlMsg        = document.getElementById('ctrl-message');
 const lastUpdate     = document.getElementById('last-update');
 
@@ -83,6 +84,9 @@ function showUploadMsg(msg, ok = true) {
   uploadMessage.textContent = msg;
   uploadMessage.style.color = ok ? 'var(--success)' : 'var(--danger)';
 }
+function normalizeStatus(status) {
+  return String(status || 'ready').trim().toUpperCase();
+}
 
 /* ── Status polling ──────────────────────────────────────────────────────── */
 async function fetchStatus() {
@@ -105,22 +109,29 @@ async function fetchStatus() {
 }
 
 function updateUI(d) {
-  currentStatus = d.status || 'IDLE';
+  currentStatus = normalizeStatus(d.status);
 
   // Badge
   const statusMap = {
+    READY: ['badge--idle', 'PRONTA'],
+    BUSY: ['badge--printing', 'OCCUPATA'],
+    HEATING: ['badge--printing', 'RISCALDAMENTO'],
     PRINTING: ['badge--printing', 'STAMPA'],
+    PAUSING:  ['badge--paused',   'IN PAUSA'],
     PAUSED:   ['badge--paused',   'IN PAUSA'],
+    COMPLETED:['badge--success',  'COMPLETATA'],
+    CANCEL:   ['badge--error',    'ANNULLATA'],
     IDLE:     ['badge--idle',     'INATTIVA'],
     ERROR:    ['badge--error',    'ERRORE'],
     HOMING:   ['badge--printing', 'HOMING'],
+    CALIBRATE_DOING: ['badge--printing', 'CALIBRAZIONE'],
   };
   const [cls, label] = statusMap[currentStatus] || ['badge--idle', currentStatus];
   badge.className = `badge ${cls}`;
   badge.textContent = label;
 
   // Job info
-  currentJobID = d.jobInfo ? (d.jobInfo[0] && d.jobInfo[0][1]) : null;
+  currentJobID = d.jobInfo ? (d.jobInfo[0] && d.jobInfo[0][1]) : '';
   sFname.textContent = d.printFileName || '—';
   sFname.title = d.printFileName || '';
 
@@ -145,11 +156,15 @@ function updateUI(d) {
   tChamberTarget.textContent = d.chamberTargetTemp ? `→ ${fmt(d.chamberTargetTemp)}` : '';
 
   // Controls enable/disable
-  const isPrinting = currentStatus === 'PRINTING';
-  const isPaused   = currentStatus === 'PAUSED';
-  btnPause.disabled  = !isPrinting;
+  const hasControllableJob = Boolean(d.printFileName || currentJobID || pct !== null);
+  const canPause = hasControllableJob && ['PRINTING', 'BUSY', 'HEATING'].includes(currentStatus);
+  const isPaused = currentStatus === 'PAUSED';
+  const canStop = hasControllableJob && ['PRINTING', 'BUSY', 'HEATING', 'PAUSED', 'PAUSING'].includes(currentStatus);
+  const canClearState = ['BUSY', 'COMPLETED', 'CANCEL'].includes(currentStatus);
+  btnPause.disabled  = !canPause;
   btnResume.disabled = !isPaused;
-  btnStop.disabled   = !(isPrinting || isPaused);
+  btnStop.disabled   = !canStop;
+  btnClearState.disabled = !canClearState;
 
 }
 
@@ -188,19 +203,47 @@ cameraImg.addEventListener('error', () => {
 
 /* ── Print controls ──────────────────────────────────────────────────────── */
 async function sendControl(action) {
-  if (!currentJobID) { showCtrlMsg('Nessun job attivo.', false); return; }
+  const actionMap = {
+    pause: 'pause',
+    resume: 'continue',
+    stop: 'cancel',
+  };
+  const printerAction = actionMap[action] || action;
+  const canSendWithoutJobId = ['PRINTING', 'BUSY', 'HEATING', 'PAUSED', 'PAUSING'].includes(currentStatus);
+  if (!currentJobID && !canSendWithoutJobId) {
+    showCtrlMsg('Nessun job attivo.', false);
+    return;
+  }
   try {
     const res = await fetch(`${BASE}/api/control`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, jobID: currentJobID }),
+      body: JSON.stringify({ action: printerAction, jobID: currentJobID || '' }),
     });
     const json = await res.json();
-    if (json.code === 0) {
+    if (res.ok && json.code === 0) {
       showCtrlMsg(`Comando "${action}" inviato.`);
       await fetchStatus();
     } else {
-      showCtrlMsg(`Errore: ${json.message || json.code}`, false);
+      showCtrlMsg(`Errore: ${json.error || json.message || json.code}`, false);
+    }
+  } catch (e) {
+    showCtrlMsg(`Errore di rete: ${e.message}`, false);
+  }
+}
+
+async function clearPrinterState() {
+  try {
+    const res = await fetch(`${BASE}/api/state/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const json = await res.json();
+    if (res.ok && json.code === 0) {
+      showCtrlMsg('Stato stampante ripulito.');
+      await fetchStatus();
+    } else {
+      showCtrlMsg(`Errore: ${json.error || json.message || json.code}`, false);
     }
   } catch (e) {
     showCtrlMsg(`Errore di rete: ${e.message}`, false);
@@ -212,6 +255,10 @@ btnResume.addEventListener('click', () => sendControl('resume'));
 btnStop.addEventListener('click', async () => {
   if (!confirm('Sei sicuro di voler interrompere la stampa?')) return;
   await sendControl('stop');
+});
+btnClearState.addEventListener('click', async () => {
+  if (!confirm('Vuoi ripulire lo stato della stampante e riportarla in ready?')) return;
+  await clearPrinterState();
 });
 
 /* ── File list ───────────────────────────────────────────────────────────── */

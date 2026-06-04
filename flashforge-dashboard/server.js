@@ -64,6 +64,15 @@ async function printerPost(endpoint, body = {}) {
   }
 }
 
+async function printerControl(cmd, args = {}) {
+  return printerPost('/control', {
+    payload: {
+      cmd,
+      args,
+    },
+  });
+}
+
 /**
  * Validate that required env vars are set and return 503 otherwise.
  */
@@ -93,20 +102,24 @@ app.get('/api/status', requireConfig, async (req, res) => {
 
 /**
  * POST /api/control
- * Body: { action: "pause"|"resume"|"stop", jobID: "..." }
+ * Body: { action: "pause"|"continue"|"cancel", jobID?: "..." }
  */
 app.post('/api/control', requireConfig, async (req, res) => {
   const { action, jobID } = req.body;
-  if (!action || !jobID) {
-    return res.status(400).json({ error: 'action and jobID are required' });
+  if (!action) {
+    return res.status(400).json({ error: 'action is required' });
   }
   try {
-    const data = await printerPost('/control', {
-      payload: {
-        cmd: 'jobCtl_cmd',
-        args: { jobID, action },
-      },
-    });
+    const data = await printerControl('jobCtl_cmd', { jobID: jobID || '', action });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.post('/api/state/clear', requireConfig, async (req, res) => {
+  try {
+    const data = await printerControl('stateCtrl_cmd', { action: 'setClearPlatform' });
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -245,12 +258,7 @@ app.post('/api/camera', requireConfig, async (req, res) => {
   const { action } = req.body;
   if (!action) return res.status(400).json({ error: 'action is required' });
   try {
-    const data = await printerPost('/control', {
-      payload: {
-        cmd: 'streamCtrl_cmd',
-        args: { action },
-      },
-    });
+    const data = await printerControl('streamCtrl_cmd', { action });
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });

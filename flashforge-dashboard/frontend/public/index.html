@@ -40,6 +40,10 @@
       </div>
 
       <div class="pairs-grid">
+        <div class="stat stat--full">
+          <span class="stat-label">File</span>
+          <span class="stat-value" id="s-filename">—</span>
+        </div>
         <div class="temp-card">
           <span class="temp-label">🔥 Ugello</span>
           <span class="temp-value" id="t-nozzle">—</span>
@@ -50,7 +54,7 @@
           <span class="temp-value" id="t-bed">—</span>
           <span class="temp-target" id="t-bed-target"></span>
         </div>
-        <div class="temp-card" id="chamber-card">
+        <div class="temp-card temp-card--full" id="chamber-card">
           <span class="temp-label">📦 Camera</span>
           <span class="temp-value" id="t-chamber">—</span>
           <span class="temp-target" id="t-chamber-target"></span>
@@ -60,21 +64,17 @@
           <span class="stat-value stat-value--compact" id="s-layer">—</span>
         </div>
         <div class="stat">
-          <span class="stat-label">File</span>
-          <span class="stat-value" id="s-filename">—</span>
-        </div>
-        <div class="stat">
           <span class="stat-label">Progresso</span>
           <span class="stat-value" id="s-progress">—</span>
         </div>
-        <div class="stat">
+        <div class="stat stat--full">
           <span class="stat-label">Tempo rimanente</span>
           <span class="stat-value" id="s-time">—</span>
         </div>
-        <div><!-- spacer: keeps pairs-grid alignment before controls row --></div>
         <button id="btn-pause" class="btn btn--warning" disabled>⏸ Pausa</button>
         <button id="btn-resume" class="btn btn--success" disabled>▶ Riprendi</button>
-        <button id="btn-stop" class="btn btn--danger btn--full" disabled>⏹ Stop</button>
+        <button id="btn-stop" class="btn btn--danger" disabled>⏹ Stop</button>
+        <button id="btn-clear-state" class="btn btn--secondary" disabled>🧹 Ripulisci stato</button>
       </div>
       <div id="ctrl-message" class="ctrl-message"></div>
     </section>
