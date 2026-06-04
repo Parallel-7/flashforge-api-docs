@@ -1,3 +1,5 @@
+# BUILD_FROM is injected by the HA build system based on build.yaml.
+# The default below is a local-dev fallback for x86_64 machines only.
 ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:latest
 FROM ${BUILD_FROM}
 
