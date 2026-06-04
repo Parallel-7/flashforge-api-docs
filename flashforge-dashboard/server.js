@@ -56,7 +56,7 @@ async function printerPost(endpoint, body = {}) {
     return res.json();
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error(`Printer did not respond within ${PRINTER_TIMEOUT_MS / 1000}s (${PRINTER_IP})`);
+      throw new Error(`Printer did not respond within ${PRINTER_TIMEOUT_MS / 1000}s (${PRINTER_API})`);
     }
     throw err;
   } finally {
