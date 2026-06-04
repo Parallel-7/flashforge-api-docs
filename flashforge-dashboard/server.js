@@ -258,12 +258,9 @@ app.get('/api/config', (req, res) => {
 // absolute paths (e.g. /api/status) which would bypass the ingress prefix.
 // We inject window.INGRESS_PATH into the HTML so the frontend can prefix them.
 const INDEX_HTML_PATH = path.join(__dirname, 'frontend', 'public', 'index.html');
-let indexHtmlBase = null;
+const indexHtmlBase = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 
 function serveIndex(req, res) {
-  if (!indexHtmlBase) {
-    indexHtmlBase = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
-  }
   const script = `<script>window.INGRESS_PATH = '${INGRESS_PATH}';</script>\n`;
   const html = indexHtmlBase.replace('</head>', `  ${script}</head>`);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
