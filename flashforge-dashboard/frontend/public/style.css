@@ -150,7 +150,7 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#s-layer { font-size: 16px; }
+.stat-value--compact { font-size: 16px; }
 
 /* ── Progress bar ────────────────────────────────────────────────────────── */
 .progress-bar-wrap {
@@ -365,7 +365,7 @@ footer {
   }
   .stat { padding: 9px 10px; }
   .stat-value { font-size: 15px; white-space: normal; }
-  #s-layer { font-size: 14px; }
+  .stat-value--compact { font-size: 14px; }
 
   .temp-grid {
     flex-direction: column;
