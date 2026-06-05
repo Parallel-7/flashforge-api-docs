@@ -12,6 +12,12 @@ export CHECK_CODE="$(bashio::config 'check_code')"
 export PORT="8099"
 export NODE_ENV="production"
 export INGRESS_PATH="$(bashio::addon.ingress_entry)"
+export MQTT_ENABLED="$(bashio::config 'mqtt_enabled')"
+export MQTT_HOST="$(bashio::config 'mqtt_host')"
+export MQTT_PORT="$(bashio::config 'mqtt_port')"
+export MQTT_USERNAME="$(bashio::config 'mqtt_username')"
+export MQTT_PASSWORD="$(bashio::config 'mqtt_password')"
+export MQTT_BASE_TOPIC="$(bashio::config 'mqtt_base_topic')"
 
 if bashio::config.is_empty 'printer_ip'; then
   bashio::log.warning "printer_ip is not configured. Set it in the add-on Configuration tab."
@@ -25,5 +31,7 @@ fi
 
 bashio::log.info "Printer IP: ${PRINTER_IP}"
 bashio::log.info "Listening on port ${PORT}"
+bashio::log.info "MQTT enabled: ${MQTT_ENABLED}"
+bashio::log.info "MQTT broker: ${MQTT_HOST}:${MQTT_PORT}"
 
 exec node /app/server.js
