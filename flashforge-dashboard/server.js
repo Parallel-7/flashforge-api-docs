@@ -5,6 +5,7 @@
 const express = require('express');
 const multer = require('multer');
 const fetch = require('node-fetch');
+const mqtt = require('mqtt');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -22,6 +23,26 @@ const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\/$/, '');
 
 const PRINTER_API = `http://${PRINTER_IP}:8898`;
 const CAMERA_URL = `http://${PRINTER_IP}:8080/?action=stream`;
+const MQTT_ENABLED = String(process.env.MQTT_ENABLED || 'true').toLowerCase() === 'true';
+const MQTT_HOST = process.env.MQTT_HOST || 'core-mosquitto';
+const MQTT_PORT = Number(process.env.MQTT_PORT || 1883);
+const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
+const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
+const MQTT_BASE_TOPIC = sanitizeTopic(process.env.MQTT_BASE_TOPIC || 'flashforge');
+const MQTT_POLL_INTERVAL_MS = 10000;
+
+const DEVICE_ID = String(SERIAL_NUMBER || PRINTER_IP || 'flashforge_printer')
+  .replace(/[^\w-]/g, '_')
+  .toLowerCase();
+const DEVICE_NAME = SERIAL_NUMBER ? `FlashForge ${SERIAL_NUMBER}` : 'FlashForge Printer';
+const MQTT_ROOT_TOPIC = `${MQTT_BASE_TOPIC}/${DEVICE_ID}`;
+const MQTT_AVAILABILITY_TOPIC = `${MQTT_ROOT_TOPIC}/availability`;
+
+let mqttClient = null;
+let mqttConnected = false;
+let mqttDiscoveryPublished = false;
+let lastPrinterDetail = null;
+let cameraSwitchState = 'OFF';
 
 // ── Middleware ──────────────────────────────────────────────────────────────
 app.use(express.json());
@@ -73,6 +94,287 @@ async function printerControl(cmd, args = {}) {
   });
 }
 
+function sanitizeTopic(topic) {
+  return String(topic || 'flashforge')
+    .trim()
+    .replace(/^[\/\s]+|[\/\s]+$/g, '')
+    .replace(/\s+/g, '_');
+}
+
+function mqttPublish(topic, payload, options = {}) {
+  if (!mqttClient || !mqttConnected) return;
+  mqttClient.publish(topic, String(payload), { qos: 0, retain: false, ...options });
+}
+
+function getCurrentJobId() {
+  if (!lastPrinterDetail || !Array.isArray(lastPrinterDetail.jobInfo)) return '';
+  return (lastPrinterDetail.jobInfo[0] && lastPrinterDetail.jobInfo[0][1]) || '';
+}
+
+function publishMqttState(detail) {
+  if (!detail || !mqttConnected) return;
+
+  const normalizedStatus = String(detail.status || 'ready').trim().toUpperCase();
+  const progress = detail.printProgress != null ? Math.round(detail.printProgress * 100) : 0;
+  const isPrinting = ['PRINTING', 'BUSY', 'HEATING', 'PAUSED', 'PAUSING'].includes(normalizedStatus);
+  const pauseSwitchState = ['PAUSED', 'PAUSING'].includes(normalizedStatus) ? 'ON' : 'OFF';
+
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/status`, normalizedStatus, { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/progress`, progress, { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/file_name`, detail.printFileName || '', { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/nozzle_temp`, detail.rightTemp ?? '', { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/bed_temp`, detail.platTemp ?? '', { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/chamber_temp`, detail.chamberTemp ?? '', { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/estimated_time_s`, detail.estimatedTime ?? '', { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/layer_current`, detail.printLayer ?? '', { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/layer_target`, detail.targetPrintLayer ?? '', { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/is_printing`, isPrinting ? 'ON' : 'OFF', { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/pause_switch`, pauseSwitchState, { retain: true });
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/camera_switch`, cameraSwitchState, { retain: true });
+}
+
+function updatePrinterDetail(detail) {
+  if (!detail) return;
+  lastPrinterDetail = detail;
+  publishMqttState(detail);
+}
+
+function createMqttDeviceInfo() {
+  return {
+    identifiers: [DEVICE_ID],
+    name: DEVICE_NAME,
+    manufacturer: 'FlashForge',
+    model: 'AD5 Series',
+  };
+}
+
+function publishMqttDiscovery() {
+  if (!mqttConnected || mqttDiscoveryPublished) return;
+  const device = createMqttDeviceInfo();
+  const discoveryBase = 'homeassistant';
+  const publishDiscovery = (component, objectId, payload) => {
+    const topic = `${discoveryBase}/${component}/${DEVICE_ID}/${objectId}/config`;
+    mqttPublish(topic, JSON.stringify(payload), { retain: true });
+  };
+
+  publishDiscovery('sensor', 'status', {
+    name: 'Status',
+    unique_id: `${DEVICE_ID}_status`,
+    state_topic: `${MQTT_ROOT_TOPIC}/state/status`,
+    icon: 'mdi:printer-3d-nozzle-alert',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+  publishDiscovery('sensor', 'progress', {
+    name: 'Progress',
+    unique_id: `${DEVICE_ID}_progress`,
+    state_topic: `${MQTT_ROOT_TOPIC}/state/progress`,
+    unit_of_measurement: '%',
+    icon: 'mdi:progress-clock',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+  publishDiscovery('sensor', 'nozzle_temp', {
+    name: 'Nozzle Temperature',
+    unique_id: `${DEVICE_ID}_nozzle_temp`,
+    state_topic: `${MQTT_ROOT_TOPIC}/state/nozzle_temp`,
+    unit_of_measurement: '°C',
+    device_class: 'temperature',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+  publishDiscovery('sensor', 'bed_temp', {
+    name: 'Bed Temperature',
+    unique_id: `${DEVICE_ID}_bed_temp`,
+    state_topic: `${MQTT_ROOT_TOPIC}/state/bed_temp`,
+    unit_of_measurement: '°C',
+    device_class: 'temperature',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+  publishDiscovery('sensor', 'chamber_temp', {
+    name: 'Chamber Temperature',
+    unique_id: `${DEVICE_ID}_chamber_temp`,
+    state_topic: `${MQTT_ROOT_TOPIC}/state/chamber_temp`,
+    unit_of_measurement: '°C',
+    device_class: 'temperature',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+  publishDiscovery('sensor', 'estimated_time', {
+    name: 'Estimated Time',
+    unique_id: `${DEVICE_ID}_estimated_time_s`,
+    state_topic: `${MQTT_ROOT_TOPIC}/state/estimated_time_s`,
+    unit_of_measurement: 's',
+    icon: 'mdi:timer-outline',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+  publishDiscovery('binary_sensor', 'is_printing', {
+    name: 'Printing',
+    unique_id: `${DEVICE_ID}_is_printing`,
+    state_topic: `${MQTT_ROOT_TOPIC}/state/is_printing`,
+    payload_on: 'ON',
+    payload_off: 'OFF',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+  publishDiscovery('switch', 'pause_resume', {
+    name: 'Pause Print',
+    unique_id: `${DEVICE_ID}_pause_resume`,
+    state_topic: `${MQTT_ROOT_TOPIC}/state/pause_switch`,
+    command_topic: `${MQTT_ROOT_TOPIC}/command/pause_resume`,
+    payload_on: 'PAUSE',
+    payload_off: 'RESUME',
+    state_on: 'ON',
+    state_off: 'OFF',
+    icon: 'mdi:pause-circle',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+  publishDiscovery('switch', 'camera', {
+    name: 'Camera Stream',
+    unique_id: `${DEVICE_ID}_camera_stream`,
+    state_topic: `${MQTT_ROOT_TOPIC}/state/camera_switch`,
+    command_topic: `${MQTT_ROOT_TOPIC}/command/camera`,
+    payload_on: 'OPEN',
+    payload_off: 'CLOSE',
+    state_on: 'ON',
+    state_off: 'OFF',
+    icon: 'mdi:cctv',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+  publishDiscovery('button', 'stop', {
+    name: 'Stop Print',
+    unique_id: `${DEVICE_ID}_stop`,
+    command_topic: `${MQTT_ROOT_TOPIC}/command/stop`,
+    payload_press: 'STOP',
+    icon: 'mdi:stop-circle',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+  publishDiscovery('button', 'clear_state', {
+    name: 'Clear Printer State',
+    unique_id: `${DEVICE_ID}_clear_state`,
+    command_topic: `${MQTT_ROOT_TOPIC}/command/clear_state`,
+    payload_press: 'CLEAR',
+    icon: 'mdi:broom',
+    availability_topic: MQTT_AVAILABILITY_TOPIC,
+    device,
+  });
+
+  mqttDiscoveryPublished = true;
+}
+
+async function refreshPrinterState() {
+  if (!PRINTER_IP || !SERIAL_NUMBER || !CHECK_CODE) return;
+  try {
+    const data = await printerPost('/detail');
+    if (data && data.detail) {
+      updatePrinterDetail(data.detail);
+    }
+  } catch (err) {
+    console.warn(`MQTT state refresh failed: ${err.message}`);
+  }
+}
+
+function isTruthyPayload(payload) {
+  return ['1', 'ON', 'TRUE', 'OPEN', 'PAUSE', 'STOP', 'CLEAR', 'PRESS', 'RESUME', 'CONTINUE', 'CLOSE', '0', 'OFF', 'FALSE']
+    .includes(payload);
+}
+
+async function handleMqttCommand(topic, payloadRaw) {
+  const payload = String(payloadRaw || '').trim().toUpperCase();
+  if (!payload || !isTruthyPayload(payload)) return;
+
+  if (topic === `${MQTT_ROOT_TOPIC}/command/camera`) {
+    const action = ['OPEN', 'ON', '1', 'TRUE'].includes(payload) ? 'open' : 'close';
+    await printerControl('streamCtrl_cmd', { action });
+    cameraSwitchState = action === 'open' ? 'ON' : 'OFF';
+    mqttPublish(`${MQTT_ROOT_TOPIC}/state/camera_switch`, cameraSwitchState, { retain: true });
+    return;
+  }
+
+  if (topic === `${MQTT_ROOT_TOPIC}/command/pause_resume`) {
+    const action = ['PAUSE', 'ON', '1', 'TRUE'].includes(payload) ? 'pause' : 'continue';
+    await printerControl('jobCtl_cmd', { jobID: getCurrentJobId(), action });
+    await refreshPrinterState();
+    return;
+  }
+
+  if (topic === `${MQTT_ROOT_TOPIC}/command/stop`) {
+    if (!['STOP', 'PRESS', 'ON', '1', 'TRUE'].includes(payload)) return;
+    await printerControl('jobCtl_cmd', { jobID: getCurrentJobId(), action: 'cancel' });
+    await refreshPrinterState();
+    return;
+  }
+
+  if (topic === `${MQTT_ROOT_TOPIC}/command/clear_state`) {
+    if (!['CLEAR', 'PRESS', 'ON', '1', 'TRUE'].includes(payload)) return;
+    await printerControl('stateCtrl_cmd', { action: 'setClearPlatform' });
+    await refreshPrinterState();
+  }
+}
+
+function setupMqtt() {
+  if (!MQTT_ENABLED) {
+    console.log('MQTT disabled via configuration.');
+    return;
+  }
+
+  const mqttUrl = `mqtt://${MQTT_HOST}:${MQTT_PORT}`;
+  const options = {
+    reconnectPeriod: 5000,
+    will: {
+      topic: MQTT_AVAILABILITY_TOPIC,
+      payload: 'offline',
+      retain: true,
+    },
+  };
+  if (MQTT_USERNAME) options.username = MQTT_USERNAME;
+  if (MQTT_PASSWORD) options.password = MQTT_PASSWORD;
+
+  mqttClient = mqtt.connect(mqttUrl, options);
+
+  mqttClient.on('connect', async () => {
+    mqttConnected = true;
+    mqttDiscoveryPublished = false;
+    console.log(`Connected to MQTT broker at ${mqttUrl}`);
+    mqttPublish(MQTT_AVAILABILITY_TOPIC, 'online', { retain: true });
+    publishMqttDiscovery();
+    await refreshPrinterState();
+
+    const commandTopics = [
+      `${MQTT_ROOT_TOPIC}/command/camera`,
+      `${MQTT_ROOT_TOPIC}/command/pause_resume`,
+      `${MQTT_ROOT_TOPIC}/command/stop`,
+      `${MQTT_ROOT_TOPIC}/command/clear_state`,
+    ];
+    mqttClient.subscribe(commandTopics, (err) => {
+      if (err) {
+        console.warn(`MQTT subscribe error: ${err.message}`);
+      }
+    });
+  });
+
+  mqttClient.on('message', async (topic, payload) => {
+    try {
+      await handleMqttCommand(topic, payload);
+    } catch (err) {
+      console.warn(`MQTT command error on ${topic}: ${err.message}`);
+    }
+  });
+
+  mqttClient.on('error', (err) => {
+    console.warn(`MQTT error: ${err.message}`);
+  });
+
+  mqttClient.on('close', () => {
+    mqttConnected = false;
+  });
+}
+
 /**
  * Validate that required env vars are set and return 503 otherwise.
  */
@@ -94,6 +396,9 @@ function requireConfig(req, res, next) {
 app.get('/api/status', requireConfig, async (req, res) => {
   try {
     const data = await printerPost('/detail');
+    if (data && data.detail) {
+      updatePrinterDetail(data.detail);
+    }
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -111,6 +416,7 @@ app.post('/api/control', requireConfig, async (req, res) => {
   }
   try {
     const data = await printerControl('jobCtl_cmd', { jobID: jobID || '', action });
+    await refreshPrinterState();
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -120,6 +426,7 @@ app.post('/api/control', requireConfig, async (req, res) => {
 app.post('/api/state/clear', requireConfig, async (req, res) => {
   try {
     const data = await printerControl('stateCtrl_cmd', { action: 'setClearPlatform' });
+    await refreshPrinterState();
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -164,6 +471,7 @@ app.post('/api/print', requireConfig, async (req, res) => {
   if (!fileName) return res.status(400).json({ error: 'fileName is required' });
   try {
     const data = await printerPost('/printGcode', { fileName, levelingBeforePrint });
+    await refreshPrinterState();
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -213,6 +521,9 @@ app.post('/api/upload', requireConfig, upload.single('gcodeFile'), async (req, r
   });
 
   const result = await printerRes.json().catch(() => ({ code: printerRes.status }));
+  if (printerRes.ok && result.code === 0) {
+    await refreshPrinterState();
+  }
   res.status(printerRes.ok ? 200 : 502).json(result);
 });
 
@@ -259,6 +570,8 @@ app.post('/api/camera', requireConfig, async (req, res) => {
   if (!action) return res.status(400).json({ error: 'action is required' });
   try {
     const data = await printerControl('streamCtrl_cmd', { action });
+    cameraSwitchState = action === 'open' ? 'ON' : 'OFF';
+    mqttPublish(`${MQTT_ROOT_TOPIC}/state/camera_switch`, cameraSwitchState, { retain: true });
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: err.message });
@@ -296,7 +609,29 @@ app.get('*', serveIndex);
 app.listen(PORT, () => {
   console.log(`FlashForge Dashboard (HA add-on) running on port ${PORT}`);
   console.log(`Ingress path: ${INGRESS_PATH || '(none)'}`);
+  console.log(`Direct HTTP URL: http://0.0.0.0:${PORT}`);
   if (!PRINTER_IP || !SERIAL_NUMBER || !CHECK_CODE) {
     console.warn('⚠  printer_ip, serial_number or check_code not set. Configure them in the HA add-on Configuration tab.');
   }
+  setupMqtt();
+  if (MQTT_ENABLED) {
+    setInterval(() => {
+      refreshPrinterState();
+    }, MQTT_POLL_INTERVAL_MS);
+  }
 });
+
+function shutdown() {
+  if (mqttClient) {
+    try {
+      mqttPublish(MQTT_AVAILABILITY_TOPIC, 'offline', { retain: true });
+      mqttClient.end(true);
+    } catch (_) {
+      // ignore shutdown errors
+    }
+  }
+  process.exit(0);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

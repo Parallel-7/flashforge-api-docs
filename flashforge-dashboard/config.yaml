@@ -19,16 +19,33 @@ ingress: true
 ingress_port: 8099
 panel_icon: mdi:printer-3d
 panel_title: FlashForge
+webui: "http://[HOST]:[PORT:8099]"
+ports:
+  8099/tcp: 8099
+ports_description:
+  8099/tcp: Dashboard HTTP
 
 # Opzioni configurabili dal pannello HA (Add-on → Configurazione)
 options:
   printer_ip: ""
   serial_number: ""
   check_code: ""
+  mqtt_enabled: true
+  mqtt_host: "core-mosquitto"
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_base_topic: "flashforge"
 
 schema:
   printer_ip: str
   serial_number: str
   check_code: str
+  mqtt_enabled: bool
+  mqtt_host: str
+  mqtt_port: port
+  mqtt_username: str?
+  mqtt_password: password?
+  mqtt_base_topic: str
 
 url: "https://github.com/MikManenti/flashforge-api-docs"
