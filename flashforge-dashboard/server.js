@@ -15,6 +15,9 @@ const PORT = process.env.PORT || 8099;
 const PRINTER_IP = process.env.PRINTER_IP;
 const SERIAL_NUMBER = process.env.SERIAL_NUMBER;
 const CHECK_CODE = process.env.CHECK_CODE;
+const KNOWN_MQTT_COMMAND_PAYLOADS = new Set([
+  '1', 'ON', 'TRUE', 'OPEN', 'PAUSE', 'STOP', 'CLEAR', 'PRESS', 'RESUME', 'CONTINUE', 'CLOSE', '0', 'OFF', 'FALSE',
+]);
 
 // HA Ingress sets this env var to the URL prefix it uses when proxying
 // (e.g. "/api/hassio_ingress/abc123"). The frontend needs this to build
@@ -23,7 +26,7 @@ const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\/$/, '');
 
 const PRINTER_API = `http://${PRINTER_IP}:8898`;
 const CAMERA_URL = `http://${PRINTER_IP}:8080/?action=stream`;
-const MQTT_ENABLED = String(process.env.MQTT_ENABLED || 'true').toLowerCase() === 'true';
+const MQTT_ENABLED = parseBooleanEnv(process.env.MQTT_ENABLED, true);
 const MQTT_HOST = process.env.MQTT_HOST || 'core-mosquitto';
 const MQTT_PORT = Number(process.env.MQTT_PORT || 1883);
 const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
@@ -100,6 +103,14 @@ function sanitizeTopic(topic) {
     .trim()
     .replace(/^[\/\s]+|[\/\s]+$/g, '')
     .replace(/\s+/g, '_');
+}
+
+function parseBooleanEnv(value, defaultValue = false) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  const normalized = String(value).trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  return defaultValue;
 }
 
 function mqttPublish(topic, payload, options = {}) {
@@ -281,8 +292,7 @@ async function refreshPrinterState() {
 }
 
 function isKnownCommandPayload(payload) {
-  return ['1', 'ON', 'TRUE', 'OPEN', 'PAUSE', 'STOP', 'CLEAR', 'PRESS', 'RESUME', 'CONTINUE', 'CLOSE', '0', 'OFF', 'FALSE']
-    .includes(payload);
+  return KNOWN_MQTT_COMMAND_PAYLOADS.has(payload);
 }
 
 async function handleMqttCommand(topic, payloadRaw) {
@@ -631,8 +641,8 @@ function shutdown() {
     try {
       mqttPublish(MQTT_AVAILABILITY_TOPIC, 'offline', { retain: true });
       mqttClient.end(true);
-    } catch (_) {
-      // ignore shutdown errors
+    } catch (err) {
+      console.warn(`MQTT shutdown warning: ${err.message}`);
     }
   }
   process.exit(0);
