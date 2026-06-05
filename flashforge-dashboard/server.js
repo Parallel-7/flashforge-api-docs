@@ -43,6 +43,7 @@ let mqttConnected = false;
 let mqttDiscoveryPublished = false;
 let lastPrinterDetail = null;
 let cameraSwitchState = 'OFF';
+let mqttPollingTimer = null;
 
 // ── Middleware ──────────────────────────────────────────────────────────────
 app.use(express.json());
@@ -279,14 +280,14 @@ async function refreshPrinterState() {
   }
 }
 
-function isTruthyPayload(payload) {
+function isKnownCommandPayload(payload) {
   return ['1', 'ON', 'TRUE', 'OPEN', 'PAUSE', 'STOP', 'CLEAR', 'PRESS', 'RESUME', 'CONTINUE', 'CLOSE', '0', 'OFF', 'FALSE']
     .includes(payload);
 }
 
 async function handleMqttCommand(topic, payloadRaw) {
   const payload = String(payloadRaw || '').trim().toUpperCase();
-  if (!payload || !isTruthyPayload(payload)) return;
+  if (!payload || !isKnownCommandPayload(payload)) return;
 
   if (topic === `${MQTT_ROOT_TOPIC}/command/camera`) {
     const action = ['OPEN', 'ON', '1', 'TRUE'].includes(payload) ? 'open' : 'close';
@@ -615,13 +616,17 @@ app.listen(PORT, () => {
   }
   setupMqtt();
   if (MQTT_ENABLED) {
-    setInterval(() => {
+    mqttPollingTimer = setInterval(() => {
       refreshPrinterState();
     }, MQTT_POLL_INTERVAL_MS);
   }
 });
 
 function shutdown() {
+  if (mqttPollingTimer) {
+    clearInterval(mqttPollingTimer);
+    mqttPollingTimer = null;
+  }
   if (mqttClient) {
     try {
       mqttPublish(MQTT_AVAILABILITY_TOPIC, 'offline', { retain: true });
