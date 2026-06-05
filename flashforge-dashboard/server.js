@@ -620,7 +620,7 @@ app.get('*', serveIndex);
 app.listen(PORT, () => {
   console.log(`FlashForge Dashboard (HA add-on) running on port ${PORT}`);
   console.log(`Ingress path: ${INGRESS_PATH || '(none)'}`);
-  console.log(`Direct HTTP URL: http://0.0.0.0:${PORT}`);
+  console.log(`Direct HTTP URL: http://<HOST_IP>:${PORT}`);
   if (!PRINTER_IP || !SERIAL_NUMBER || !CHECK_CODE) {
     console.warn('⚠  printer_ip, serial_number or check_code not set. Configure them in the HA add-on Configuration tab.');
   }
@@ -640,6 +640,7 @@ function shutdown() {
   if (mqttClient) {
     try {
       mqttPublish(MQTT_AVAILABILITY_TOPIC, 'offline', { retain: true });
+      // Force close to avoid hanging shutdown in add-on restarts.
       mqttClient.end(true);
     } catch (err) {
       console.warn(`MQTT shutdown warning: ${err.message}`);
