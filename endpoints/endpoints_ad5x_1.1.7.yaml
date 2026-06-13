@@ -546,12 +546,13 @@ components:
         stateAction:
           type: integer
           description: >-
-            Material operation stage. Observed values: 0=idle/cancel, 2=load step 2, 3=load step 3,
-            4=unload step 2, 5=unload step 3, 6=complete.
+            Material operation mode (which operation is active). Values: 0=idle, 1=load, 2=unload, 3=cancel.
+            Mirrors the ms_cmd `action` arg shifted +1 (action 0=load -> stateAction 1), since 0 is reserved for idle.
         stateStep:
           type: integer
           description: >-
-            Material operation mode. Observed values: 0=idle, 1=load, 2=unload, 3=cancel.
+            Progress step within the active operation. Values: 0=idle/cancel, 2=load step 2, 3=load step 3,
+            4=unload step 2, 5=unload step 3, 6=complete.
         slotInfos:
           type: array
           items:
@@ -576,12 +577,13 @@ components:
         stateAction:
           type: integer
           description: >-
-            Material operation stage. Observed values: 0=idle/cancel, 2=load step 2, 3=load step 3,
-            4=unload step 2, 5=unload step 3, 6=complete.
+            Material operation mode (which operation is active). Values: 0=idle, 1=load, 2=unload, 3=cancel.
+            Mirrors the ms_cmd `action` arg shifted +1 (action 0=load -> stateAction 1), since 0 is reserved for idle.
         stateStep:
           type: integer
           description: >-
-            Material operation mode. Observed values: 0=idle, 1=load, 2=unload, 3=cancel.
+            Progress step within the active operation. Values: 0=idle/cancel, 2=load step 2, 3=load step 3,
+            4=unload step 2, 5=unload step 3, 6=complete.
         materialName:
           type: string
         materialColor:
