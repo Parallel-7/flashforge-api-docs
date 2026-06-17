@@ -533,6 +533,18 @@ app.post('/api/upload', requireConfig, upload.single('gcodeFile'), async (req, r
 
   const result = await printerRes.json().catch(() => ({ code: printerRes.status }));
   if (printerRes.ok && result.code === 0) {
+    if (printNow === '1') {
+      try {
+        await printerPost('/printGcode', {
+          fileName: req.file.originalname,
+          levelingBeforePrint: levelingBeforePrint === '1',
+        });
+      } catch (err) {
+        // Upload succeeded; report the print-start failure without blocking the response
+        await refreshPrinterState();
+        return res.status(200).json({ code: 0, printStartError: err.message });
+      }
+    }
     await refreshPrinterState();
   }
   res.status(printerRes.ok ? 200 : 502).json(result);
