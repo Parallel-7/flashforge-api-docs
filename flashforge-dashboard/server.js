@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
+const { spawn } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 8099;
@@ -555,20 +556,98 @@ app.post('/api/upload', requireConfig, upload.single('gcodeFile'), async (req, r
 });
 
 /**
+ * Transcodes an RTSP stream to HTTP MJPEG using ffmpeg.
+ * Spawns ffmpeg, reads raw JPEG frames from its stdout, and wraps them in a
+ * multipart/x-mixed-replace response so the browser <img> tag can display it.
+ */
+function streamRtspAsMjpeg(rtspUrl, req, res) {
+  const BOUNDARY = 'mjpegstream';
+  const MAX_PENDING = 4 * 1024 * 1024; // 4 MB – guard against a broken stream
+
+  res.writeHead(200, {
+    'Content-Type': `multipart/x-mixed-replace; boundary=${BOUNDARY}`,
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+
+  const ff = spawn('ffmpeg', [
+    '-loglevel', 'error',
+    '-rtsp_transport', 'tcp',
+    '-i', rtspUrl,
+    '-vf', 'fps=10',
+    '-f', 'image2pipe',
+    '-vcodec', 'mjpeg',
+    '-q:v', '5',
+    'pipe:1',
+  ]);
+
+  let pending = Buffer.alloc(0);
+  const SOI = Buffer.from([0xff, 0xd8]);
+  const EOI = Buffer.from([0xff, 0xd9]);
+
+  ff.stdout.on('data', (chunk) => {
+    pending = Buffer.concat([pending, chunk]);
+
+    for (;;) {
+      const soi = pending.indexOf(SOI);
+      if (soi === -1) {
+        // Keep the last byte: the SOI marker might be split across chunks.
+        pending = pending.length > 0 ? pending.slice(-1) : Buffer.alloc(0);
+        break;
+      }
+      const eoi = pending.indexOf(EOI, soi + 2);
+      if (eoi === -1) { pending = pending.slice(soi); break; }
+
+      const frame = pending.slice(soi, eoi + 2);
+      pending = pending.slice(eoi + 2);
+
+      if (!res.writableEnded) {
+        res.write(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
+        res.write(frame);
+        res.write('\r\n');
+      }
+    }
+
+    if (pending.length > MAX_PENDING) pending = Buffer.alloc(0);
+  });
+
+  ff.stderr.on('data', (d) => console.error('[ffmpeg]', d.toString().trim()));
+
+  ff.on('error', (err) => {
+    console.error('[ffmpeg] spawn error:', err.message);
+    if (!res.writableEnded) res.end();
+  });
+
+  ff.on('exit', (code) => {
+    if (!res.writableEnded) res.end();
+    if (code !== 0 && code !== null) console.error(`[ffmpeg] exited with code ${code}`);
+  });
+
+  req.on('close', () => { if (!ff.killed) ff.kill('SIGTERM'); });
+}
+
+/**
  * GET /api/camera/stream
  * Proxies the MJPEG stream from Frigate (or the printer camera as fallback)
  * so the browser can display it without cross-origin issues.
+ * When the source URL uses the rtsp:// or rtsps:// scheme, ffmpeg is used to
+ * transcode the stream to MJPEG on the fly.
  */
 app.get('/api/camera/stream', requireConfig, (req, res) => {
   if (!CAMERA_URL) {
     return res.status(503).json({ error: 'No camera source configured' });
   }
-  const url = new URL(CAMERA_URL);
-  const transport = url.protocol === 'https:' ? https : http;
+
+  const urlObj = new URL(CAMERA_URL);
+  if (urlObj.protocol === 'rtsp:' || urlObj.protocol === 'rtsps:') {
+    return streamRtspAsMjpeg(CAMERA_URL, req, res);
+  }
+
+  const transport = urlObj.protocol === 'https:' ? https : http;
   const options = {
-    hostname: url.hostname,
-    port: url.port || (url.protocol === 'https:' ? 443 : 80),
-    path: url.pathname + url.search,
+    hostname: urlObj.hostname,
+    port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+    path: urlObj.pathname + urlObj.search,
     method: 'GET',
   };
 
