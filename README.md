@@ -49,6 +49,28 @@ Progetto non ufficiale, non affiliato con FlashForge o Home Assistant.
 - **Ingress Home Assistant**: da sidebar (come prima)
 - **HTTP diretto**: `http://<IP_HOME_ASSISTANT>:8099`
 
+## Integrazione camera con Frigate
+
+Per visualizzare il feed della camera della stampante nel dashboard è possibile usare [Frigate](https://frigate.video/) con [go2rtc](https://github.com/AlexxIT/go2rtc).
+
+### Configurazione Frigate
+
+```yaml
+go2rtc:
+  streams:
+    Stampante:
+      - "ffmpeg:http://IP_DELLA_STAMPANTE:8080/?action=stream"
+
+cameras:
+  Stampante:
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/Stampante
+```
+
+Dopo aver configurato Frigate, Home Assistant esporrà automaticamente un'entità camera (es. `camera.stampante`).  
+Inserisci il nome dell'entità nella configurazione dell'add-on nel campo **`camera_entity`** (es. `camera.stampante`).
+
 ## Integrazione automatica Home Assistant (MQTT)
 
 L’add-on pubblica automaticamente sensori/switch via **MQTT Discovery**.

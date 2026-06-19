@@ -9,8 +9,6 @@ const mqtt = require('mqtt');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const https = require('https');
-const { spawn } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 8099;
@@ -27,8 +25,8 @@ const KNOWN_MQTT_COMMAND_PAYLOADS = new Set([
 const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\/$/, '');
 
 const PRINTER_API = `http://${PRINTER_IP}:8898`;
-const FRIGATE_URL = (process.env.FRIGATE_URL || '').trim();
-const CAMERA_URL = FRIGATE_URL || (PRINTER_IP ? `http://${PRINTER_IP}:8080/?action=stream` : null);
+const CAMERA_ENTITY = (process.env.CAMERA_ENTITY || '').trim();
+const SUPERVISOR_TOKEN = process.env.SUPERVISOR_TOKEN || '';
 const MQTT_ENABLED = parseBooleanEnv(process.env.MQTT_ENABLED, true);
 const MQTT_HOST = process.env.MQTT_HOST || 'core-mosquitto';
 const MQTT_PORT = Number(process.env.MQTT_PORT || 1883);
@@ -304,9 +302,6 @@ async function handleMqttCommand(topic, payloadRaw) {
 
   if (topic === `${MQTT_ROOT_TOPIC}/command/camera`) {
     const action = ['OPEN', 'ON', '1', 'TRUE'].includes(payload) ? 'open' : 'close';
-    if (!FRIGATE_URL) {
-      await printerControl('streamCtrl_cmd', { action });
-    }
     cameraSwitchState = action === 'open' ? 'ON' : 'OFF';
     mqttPublish(`${MQTT_ROOT_TOPIC}/state/camera_switch`, cameraSwitchState, { retain: true });
     return;
@@ -556,102 +551,24 @@ app.post('/api/upload', requireConfig, upload.single('gcodeFile'), async (req, r
 });
 
 /**
- * Transcodes an RTSP stream to HTTP MJPEG using ffmpeg.
- * Spawns ffmpeg, reads raw JPEG frames from its stdout, and wraps them in a
- * multipart/x-mixed-replace response so the browser <img> tag can display it.
- */
-function streamRtspAsMjpeg(rtspUrl, req, res) {
-  const BOUNDARY = 'mjpegstream';
-  const MAX_PENDING = 4 * 1024 * 1024; // 4 MB – guard against a broken stream
-
-  res.writeHead(200, {
-    'Content-Type': `multipart/x-mixed-replace; boundary=${BOUNDARY}`,
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-  });
-
-  const ff = spawn('ffmpeg', [
-    '-loglevel', 'error',
-    '-rtsp_transport', 'tcp',
-    '-i', rtspUrl,
-    '-vf', 'fps=10',
-    '-f', 'image2pipe',
-    '-vcodec', 'mjpeg',
-    '-q:v', '5',
-    'pipe:1',
-  ]);
-
-  let pending = Buffer.alloc(0);
-  const SOI = Buffer.from([0xff, 0xd8]);
-  const EOI = Buffer.from([0xff, 0xd9]);
-
-  ff.stdout.on('data', (chunk) => {
-    pending = Buffer.concat([pending, chunk]);
-
-    for (;;) {
-      const soi = pending.indexOf(SOI);
-      if (soi === -1) {
-        // Keep the last byte: the SOI marker might be split across chunks.
-        pending = pending.length > 0 ? pending.slice(-1) : Buffer.alloc(0);
-        break;
-      }
-      const eoi = pending.indexOf(EOI, soi + 2);
-      if (eoi === -1) { pending = pending.slice(soi); break; }
-
-      const frame = pending.slice(soi, eoi + 2);
-      pending = pending.slice(eoi + 2);
-
-      if (!res.writableEnded) {
-        res.write(`--${BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
-        res.write(frame);
-        res.write('\r\n');
-      }
-    }
-
-    if (pending.length > MAX_PENDING) pending = Buffer.alloc(0);
-  });
-
-  ff.stderr.on('data', (d) => console.error('[ffmpeg]', d.toString().trim()));
-
-  ff.on('error', (err) => {
-    console.error('[ffmpeg] spawn error:', err.message);
-    if (!res.writableEnded) res.end();
-  });
-
-  ff.on('exit', (code) => {
-    if (!res.writableEnded) res.end();
-    if (code !== 0 && code !== null) console.error(`[ffmpeg] exited with code ${code}`);
-  });
-
-  req.on('close', () => { if (!ff.killed) ff.kill('SIGTERM'); });
-}
-
-/**
  * GET /api/camera/stream
- * Proxies the MJPEG stream from Frigate (or the printer camera as fallback)
- * so the browser can display it without cross-origin issues.
- * When the source URL uses the rtsp:// or rtsps:// scheme, ffmpeg is used to
- * transcode the stream to MJPEG on the fly.
+ * Proxies the camera stream from the configured Home Assistant camera entity
+ * via the HA Supervisor API, so the browser can display it without CORS issues.
  */
 app.get('/api/camera/stream', requireConfig, (req, res) => {
-  if (!CAMERA_URL) {
-    return res.status(503).json({ error: 'No camera source configured' });
+  if (!CAMERA_ENTITY) {
+    return res.status(503).json({ error: 'No camera entity configured' });
   }
 
-  const urlObj = new URL(CAMERA_URL);
-  if (urlObj.protocol === 'rtsp:' || urlObj.protocol === 'rtsps:') {
-    return streamRtspAsMjpeg(CAMERA_URL, req, res);
-  }
-
-  const transport = urlObj.protocol === 'https:' ? https : http;
   const options = {
-    hostname: urlObj.hostname,
-    port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
-    path: urlObj.pathname + urlObj.search,
+    hostname: 'supervisor',
+    port: 80,
+    path: `/core/api/camera_proxy_stream/${CAMERA_ENTITY}`,
     method: 'GET',
+    headers: { Authorization: 'Bearer ' + SUPERVISOR_TOKEN },
   };
 
-  const proxyReq = transport.request(options, (proxyRes) => {
+  const proxyReq = http.request(options, (proxyRes) => {
     res.writeHead(proxyRes.statusCode, {
       'Content-Type': proxyRes.headers['content-type'] || 'multipart/x-mixed-replace',
       'Cache-Control': 'no-cache',
@@ -673,24 +590,14 @@ app.get('/api/camera/stream', requireConfig, (req, res) => {
 /**
  * POST /api/camera
  * Body: { action: "open"|"close" }
- * Enables or disables the camera stream.
- * When Frigate is configured the printer's streamCtrl_cmd is skipped
- * because Frigate manages the stream independently.
+ * Tracks camera switch state (the stream itself is provided by HA).
  */
 app.post('/api/camera', requireConfig, async (req, res) => {
   const { action } = req.body;
   if (!action) return res.status(400).json({ error: 'action is required' });
-  try {
-    let data = {};
-    if (!FRIGATE_URL) {
-      data = await printerControl('streamCtrl_cmd', { action });
-    }
-    cameraSwitchState = action === 'open' ? 'ON' : 'OFF';
-    mqttPublish(`${MQTT_ROOT_TOPIC}/state/camera_switch`, cameraSwitchState, { retain: true });
-    res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: err.message });
-  }
+  cameraSwitchState = action === 'open' ? 'ON' : 'OFF';
+  mqttPublish(`${MQTT_ROOT_TOPIC}/state/camera_switch`, cameraSwitchState, { retain: true });
+  res.json({});
 });
 
 // ── Config check endpoint ────────────────────────────────────────────────────
@@ -698,8 +605,7 @@ app.get('/api/config', (req, res) => {
   res.json({
     configured: !!(PRINTER_IP && SERIAL_NUMBER && CHECK_CODE),
     printerIp: PRINTER_IP || null,
-    cameraUrl: CAMERA_URL ? `${INGRESS_PATH}/api/camera/stream` : null,
-    frigateEnabled: !!FRIGATE_URL,
+    cameraUrl: CAMERA_ENTITY ? `${INGRESS_PATH}/api/camera/stream` : null,
     ingressPath: INGRESS_PATH,
   });
 });
