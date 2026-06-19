@@ -566,16 +566,19 @@ app.post('/api/camera', requireConfig, async (req, res) => {
 
 // ── go2rtc integration ───────────────────────────────────────────────────────
 
-/** Server-side cache for video-rtc.js to avoid fetching it on every page load. */
+/** Server-side cache for go2rtc client script to avoid fetching it on every page load. */
 let cachedVideoRtcJs = null;
 let cachedVideoRtcJsAt = 0;
 const VIDEO_RTC_CACHE_TTL_MS = 3600000; // 1 hour
 
+const GO2RTC_UPSTREAM_HOST = 'ccab4aaf-frigate';
+const GO2RTC_UPSTREAM_PORT = 1984;
+const GO2RTC_UPSTREAM_HOST_HEADER = `${GO2RTC_UPSTREAM_HOST}:${GO2RTC_UPSTREAM_PORT}`;
+const GO2RTC_CLIENT_CANDIDATE_PATHS = ['/api/go2rtc/client.js', '/video-rtc.js'];
+
 /**
  * GET /api/go2rtc/client.js
- * Proxies the video-rtc.js player component from the local go2rtc add-on so
- * the browser can load it from the same origin (no CORS issues).
- * The response is cached server-side for one hour.
+ * Proxies the go2rtc client JS so the browser can load it from the same origin.
  */
 app.get('/api/go2rtc/client.js', async (req, res) => {
   if (!GO2RTC_URL) {
@@ -590,25 +593,31 @@ app.get('/api/go2rtc/client.js', async (req, res) => {
   }
 
   try {
-    const upstream = await fetch(`${GO2RTC_URL}/video-rtc.js`);
-    if (!upstream.ok) {
-      if (cachedVideoRtcJs) {
-        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-        return res.send(cachedVideoRtcJs); // serve stale on error
-      }
-      return res.status(upstream.status).send(`// go2rtc returned ${upstream.status}\n`);
+    for (const candidatePath of GO2RTC_CLIENT_CANDIDATE_PATHS) {
+      const upstream = await fetch(`${GO2RTC_URL}${candidatePath}`, {
+        headers: { Host: GO2RTC_UPSTREAM_HOST_HEADER },
+      });
+      if (!upstream.ok) continue;
+
+      cachedVideoRtcJs = await upstream.text();
+      cachedVideoRtcJsAt = now;
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'max-age=3600');
+      return res.send(cachedVideoRtcJs);
     }
-    cachedVideoRtcJs = await upstream.text();
-    cachedVideoRtcJsAt = now;
-    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    res.setHeader('Cache-Control', 'max-age=3600');
-    res.send(cachedVideoRtcJs);
+
+    if (cachedVideoRtcJs) {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      return res.send(cachedVideoRtcJs);
+    }
+
+    return res.status(502).send('// go2rtc client not available from upstream\n');
   } catch (err) {
     if (cachedVideoRtcJs) {
       res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-      return res.send(cachedVideoRtcJs); // serve stale on error
+      return res.send(cachedVideoRtcJs);
     }
-    res.status(502).send(`// go2rtc client error: ${err.message}\n`);
+    return res.status(502).send(`// go2rtc client error: ${err.message}\n`);
   }
 });
 
@@ -644,7 +653,9 @@ function serveIndex(req, res) {
 app.get('*', serveIndex);
 
 // ── Start ────────────────────────────────────────────────────────────────────
-const server = app.listen(PORT, () => {
+const server = http.createServer(app);
+
+server.listen(PORT, () => {
   console.log(`FlashForge Dashboard (HA add-on) running on port ${PORT}`);
   console.log(`Ingress path: ${INGRESS_PATH || '(none)'}`);
   console.log(`Direct HTTP URL: http://<HOST_IP>:${PORT}`);
@@ -659,15 +670,6 @@ const server = app.listen(PORT, () => {
   }
 });
 
-/**
- * WebSocket proxy for go2rtc.
- * The browser connects (via HA Ingress) to ws://.../api/go2rtc/ws?src={stream}.
- * This handler relays those frames to go2rtc's ws://GO2RTC_URL/api/ws?src={stream}
- * over plain TCP (no CORS, no Mixed-Content, works inside Docker networks).
- *
- * Path check is permissive (includes) so dynamic Ingress prefixes are handled
- * without relying on the INGRESS_PATH env var being set.
- */
 server.on('upgrade', (req, socket, head) => {
   let reqUrl;
   try {
@@ -678,30 +680,14 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
-  const pathname = reqUrl.pathname;
-
-  // Permissive check: Ingress may prepend a dynamic prefix, so we only
-  // verify that the path contains the expected endpoint segment.
-  if (!pathname.includes('/api/go2rtc/ws') || !GO2RTC_URL) {
+  if (!reqUrl.pathname.startsWith('/api/go2rtc/ws')) {
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-
-  let go2rtcBase;
-  try { go2rtcBase = new URL(GO2RTC_URL); } catch (_) {
-    socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
     socket.destroy();
     return;
   }
 
   const streamName = reqUrl.searchParams.get('src') || GO2RTC_STREAM;
   const targetPath = `/api/ws?src=${encodeURIComponent(streamName)}`;
-
-  const go2rtcHost = go2rtcBase.hostname;
-  const go2rtcPort = parseInt(go2rtcBase.port, 10) || 1984;
-
-  const frigateHost = `${go2rtcHost}:${go2rtcPort}`;
   const wsKey = req.headers['sec-websocket-key'];
   if (!wsKey) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
@@ -709,38 +695,47 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
-  const proxySocket = net.connect(go2rtcPort, go2rtcHost, () => {
+  const proxySocket = net.connect(GO2RTC_UPSTREAM_PORT, GO2RTC_UPSTREAM_HOST, () => {
     const wsVersion = req.headers['sec-websocket-version'] || '13';
     const wsProtocol = req.headers['sec-websocket-protocol'];
+    const wsExtensions = req.headers['sec-websocket-extensions'];
+    const origin = req.headers.origin;
+    const userAgent = req.headers['user-agent'];
 
     const lines = [
       `GET ${targetPath} HTTP/1.1`,
-      `Host: ${frigateHost}`,
+      `Host: ${GO2RTC_UPSTREAM_HOST_HEADER}`,
       'Upgrade: websocket',
       'Connection: Upgrade',
+      `Sec-WebSocket-Key: ${wsKey}`,
+      `Sec-WebSocket-Version: ${wsVersion}`,
     ];
-    lines.push(`Sec-WebSocket-Key: ${wsKey}`);
-    lines.push(`Sec-WebSocket-Version: ${wsVersion}`);
+
     if (wsProtocol) lines.push(`Sec-WebSocket-Protocol: ${wsProtocol}`);
+    if (wsExtensions) lines.push(`Sec-WebSocket-Extensions: ${wsExtensions}`);
+    if (origin) lines.push(`Origin: ${origin}`);
+    if (userAgent) lines.push(`User-Agent: ${userAgent}`);
+
     lines.push('', '');
     proxySocket.write(lines.join('\r\n'));
     if (head && head.length) proxySocket.write(head);
   });
 
+  const closeBoth = () => {
+    if (!socket.destroyed) socket.destroy();
+    if (!proxySocket.destroyed) proxySocket.destroy();
+  };
+
   proxySocket.on('error', (err) => {
     console.warn(`go2rtc WebSocket proxy error: ${err.message}`);
-    if (!socket.destroyed) socket.destroy();
+    closeBoth();
   });
-  socket.on('error', () => { if (!proxySocket.destroyed) proxySocket.destroy(); });
-  socket.on('close', () => { if (!proxySocket.destroyed) proxySocket.destroy(); });
-  proxySocket.on('close', () => { if (!socket.destroyed) socket.destroy(); });
+  socket.on('error', closeBoth);
+  socket.on('close', closeBoth);
+  proxySocket.on('close', closeBoth);
 
-  // Transparent TCP tunnel: all bytes (including the HTTP 101 upgrade response
-  // from go2rtc) are forwarded verbatim to the browser. The browser validates
-  // the handshake; if go2rtc rejects (e.g. returns 4xx), the browser receives
-  // that HTTP response and correctly fails the WebSocket connection.
-  proxySocket.pipe(socket);
   socket.pipe(proxySocket);
+  proxySocket.pipe(socket);
 });
 
 function shutdown() {
@@ -751,14 +746,12 @@ function shutdown() {
   if (mqttClient) {
     try {
       mqttPublish(MQTT_AVAILABILITY_TOPIC, 'offline', { retain: true });
-      // Force close to avoid hanging shutdown in add-on restarts.
       mqttClient.end(true);
     } catch (err) {
       console.warn(`MQTT shutdown warning: ${err.message}`);
     }
   }
   server.close(() => process.exit(0));
-  // Ensure we exit even if server.close hangs (e.g. open WebSocket connections)
   setTimeout(() => process.exit(0), 3000).unref();
 }
 
