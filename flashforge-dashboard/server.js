@@ -16,12 +16,14 @@ const PORT = process.env.PORT || 8099;
 const PRINTER_IP = process.env.PRINTER_IP;
 const SERIAL_NUMBER = process.env.SERIAL_NUMBER;
 const CHECK_CODE = process.env.CHECK_CODE;
-const KNOWN_MQTT_COMMAND_PAYLOADS = new Set([\n  '1', 'ON', 'TRUE', 'OPEN', 'PAUSE', 'STOP', 'CLEAR', 'PRESS', 'RESUME', 'CONTINUE', 'CLOSE', '0', 'OFF', 'FALSE',\n]);
+const KNOWN_MQTT_COMMAND_PAYLOADS = new Set([
+  '1', 'ON', 'TRUE', 'OPEN', 'PAUSE', 'STOP', 'CLEAR', 'PRESS', 'RESUME', 'CONTINUE', 'CLOSE', '0', 'OFF', 'FALSE',
+]);
 
 // HA Ingress sets this env var to the URL prefix it uses when proxying
 // (e.g. "/api/hassio_ingress/abc123"). The frontend needs this to build
 // correct absolute URLs for fetch() calls and the camera stream.
-const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\\/$/, '');
+const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\/$/, '');
 
 const PRINTER_API = `http://${PRINTER_IP}:8898`;
 const GO2RTC_URL = (process.env.GO2RTC_URL || 'http://ccab4aaf-frigate:1984').replace(/\/$/, '');
@@ -249,7 +251,7 @@ server.on('upgrade', (req, socket, head) => {
   const userAgent = req.headers['user-agent'];
 
   // Apriamo una connessione TCP nativa verso l'add-on Frigate
-  const proxySocket = net.net || net.connect(targetPort, targetHost, () => {
+  const proxySocket = net.connect(targetPort, targetHost, () => {
     const lines = [
       `GET ${targetPath} HTTP/1.1`,
       `Host: ${GO2RTC_UPSTREAM_HOST_HEADER}`, // Forza l'header richiesto da Frigate
@@ -309,4 +311,3 @@ function shutdown() {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
-  
