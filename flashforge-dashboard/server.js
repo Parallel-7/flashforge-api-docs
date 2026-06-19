@@ -26,7 +26,7 @@ const KNOWN_MQTT_COMMAND_PAYLOADS = new Set([
 const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\/$/, '');
 
 const PRINTER_API = `http://${PRINTER_IP}:8898`;
-const GO2RTC_URL = (process.env.GO2RTC_URL || 'http://a89bd424_go2rtc:1984').replace(/\/$/, '');
+const GO2RTC_URL = (process.env.GO2RTC_URL || 'http://ccab4aaf-frigate:1984').replace(/\/$/, '');
 const GO2RTC_STREAM = (process.env.GO2RTC_STREAM || 'Stampante').trim();
 const MQTT_ENABLED = parseBooleanEnv(process.env.MQTT_ENABLED, true);
 const MQTT_HOST = process.env.MQTT_HOST || 'core-mosquitto';
@@ -701,17 +701,27 @@ server.on('upgrade', (req, socket, head) => {
   const go2rtcHost = go2rtcBase.hostname;
   const go2rtcPort = parseInt(go2rtcBase.port, 10) || 1984;
 
+  const frigateHost = `${go2rtcHost}:${go2rtcPort}`;
+  const wsKey = req.headers['sec-websocket-key'];
+  if (!wsKey) {
+    socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
   const proxySocket = net.connect(go2rtcPort, go2rtcHost, () => {
+    const wsVersion = req.headers['sec-websocket-version'] || '13';
+    const wsProtocol = req.headers['sec-websocket-protocol'];
+
     const lines = [
       `GET ${targetPath} HTTP/1.1`,
-      `Host: ${go2rtcBase.host}`,
+      `Host: ${frigateHost}`,
       'Upgrade: websocket',
       'Connection: Upgrade',
     ];
-    for (const [k, v] of Object.entries(req.headers)) {
-      if (['host', 'upgrade', 'connection'].includes(k.toLowerCase())) continue;
-      lines.push(`${k}: ${v}`);
-    }
+    lines.push(`Sec-WebSocket-Key: ${wsKey}`);
+    lines.push(`Sec-WebSocket-Version: ${wsVersion}`);
+    if (wsProtocol) lines.push(`Sec-WebSocket-Protocol: ${wsProtocol}`);
     lines.push('', '');
     proxySocket.write(lines.join('\r\n'));
     if (head && head.length) proxySocket.write(head);
