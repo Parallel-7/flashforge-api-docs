@@ -9,6 +9,7 @@
     document.addEventListener('DOMContentLoaded', () => {
       const ingressPath = window.INGRESS_PATH || '';
       const go2rtcClient = document.createElement('script');
+      go2rtcClient.dataset.go2rtcClient = '1';
       go2rtcClient.src = `${ingressPath}/api/go2rtc/client.js`;
       go2rtcClient.defer = true;
       document.head.appendChild(go2rtcClient);
