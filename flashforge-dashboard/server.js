@@ -26,10 +26,8 @@ const KNOWN_MQTT_COMMAND_PAYLOADS = new Set([
 const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\/$/, '');
 
 const PRINTER_API = `http://${PRINTER_IP}:8898`;
-const CAMERA_ENTITY = (process.env.CAMERA_ENTITY || '').trim();
-const SUPERVISOR_TOKEN = process.env.SUPERVISOR_TOKEN || '';
-const GO2RTC_URL = (process.env.GO2RTC_URL || '').replace(/\/$/, '');
-const GO2RTC_STREAM = (process.env.GO2RTC_STREAM || '').trim();
+const GO2RTC_URL = (process.env.GO2RTC_URL || 'http://a89bd424_go2rtc:1984').replace(/\/$/, '');
+const GO2RTC_STREAM = (process.env.GO2RTC_STREAM || 'Stampante').trim();
 const MQTT_ENABLED = parseBooleanEnv(process.env.MQTT_ENABLED, true);
 const MQTT_HOST = process.env.MQTT_HOST || 'core-mosquitto';
 const MQTT_PORT = Number(process.env.MQTT_PORT || 1883);
@@ -554,46 +552,6 @@ app.post('/api/upload', requireConfig, upload.single('gcodeFile'), async (req, r
 });
 
 /**
- * GET /api/camera/stream
- * Proxies the camera stream from the configured Home Assistant camera entity
- * via the HA Supervisor API, so the browser can display it without CORS issues.
- */
-app.get('/api/camera/stream', requireConfig, (req, res) => {
-  if (!CAMERA_ENTITY) {
-    return res.status(503).json({ error: 'Camera entity not configured. Please set camera_entity in add-on configuration.' });
-  }
-  if (!SUPERVISOR_TOKEN) {
-    return res.status(503).json({ error: 'SUPERVISOR_TOKEN not available. Ensure the add-on is running inside Home Assistant.' });
-  }
-
-  const options = {
-    hostname: 'supervisor',
-    port: 80,
-    path: `/core/api/camera_proxy_stream/${CAMERA_ENTITY}`,
-    method: 'GET',
-    headers: { Authorization: 'Bearer ' + SUPERVISOR_TOKEN },
-  };
-
-  const proxyReq = http.request(options, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode, {
-      'Content-Type': proxyRes.headers['content-type'] || 'multipart/x-mixed-replace',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-    proxyRes.pipe(res);
-  });
-
-  proxyReq.on('error', (err) => {
-    if (!res.headersSent) {
-      res.status(502).json({ error: `Camera stream error: ${err.message}` });
-    }
-  });
-
-  req.on('close', () => proxyReq.destroy());
-  proxyReq.end();
-});
-
-/**
  * POST /api/camera
  * Body: { action: "open"|"close" }
  * Tracks camera switch state (the stream itself is provided by HA).
@@ -659,7 +617,6 @@ app.get('/api/config', (req, res) => {
   res.json({
     configured: !!(PRINTER_IP && SERIAL_NUMBER && CHECK_CODE),
     printerIp: PRINTER_IP || null,
-    cameraUrl: CAMERA_ENTITY ? `${INGRESS_PATH}/api/camera/stream` : null,
     go2rtcConfigured: !!(GO2RTC_URL && GO2RTC_STREAM),
     go2rtcStream: GO2RTC_STREAM || null,
     ingressPath: INGRESS_PATH,

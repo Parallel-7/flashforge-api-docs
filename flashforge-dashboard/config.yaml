@@ -36,9 +36,8 @@ options:
   mqtt_username: ""
   mqtt_password: ""
   mqtt_base_topic: "flashforge"
-  camera_entity: ""  # ID entità camera di Home Assistant, es. camera.stampante
   go2rtc_url: "http://a89bd424_go2rtc:1984"  # URL interno dell'add-on go2rtc/Frigate
-  go2rtc_stream: ""  # Nome dello stream in go2rtc, es. Stampante
+  go2rtc_stream: "Stampante"  # Nome dello stream in go2rtc
 
 schema:
   printer_ip: str
@@ -50,7 +49,6 @@ schema:
   mqtt_username: str?
   mqtt_password: password?
   mqtt_base_topic: str
-  camera_entity: str?
   go2rtc_url: str?
   go2rtc_stream: str?
 

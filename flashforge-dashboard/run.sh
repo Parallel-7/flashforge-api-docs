@@ -18,7 +18,6 @@ export MQTT_PORT="$(bashio::config 'mqtt_port')"
 export MQTT_USERNAME="$(bashio::config 'mqtt_username')"
 export MQTT_PASSWORD="$(bashio::config 'mqtt_password')"
 export MQTT_BASE_TOPIC="$(bashio::config 'mqtt_base_topic')"
-export CAMERA_ENTITY="$(bashio::config 'camera_entity')"
 export GO2RTC_URL="$(bashio::config 'go2rtc_url')"
 export GO2RTC_STREAM="$(bashio::config 'go2rtc_stream')"
 
