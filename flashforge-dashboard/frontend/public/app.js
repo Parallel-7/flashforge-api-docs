@@ -18,6 +18,7 @@ const GO2RTC_STREAM = window.GO2RTC_STREAM || null;
 let currentJobID = null;
 let currentStatus = null;
 let pollingTimer = null;
+let go2rtcClientLoadPromise = null;
 
 /* ── DOM refs ────────────────────────────────────────────────────────────── */
 const badge          = document.getElementById('status-badge');
@@ -173,23 +174,40 @@ function updateUI(d) {
 /* ── Camera ──────────────────────────────────────────────────────────────── */
 
 /**
- * Lazily load the go2rtc video-rtc.js custom element from our proxy endpoint.
+ * Lazily load the go2rtc custom element client from our proxy endpoint.
  * Returns a Promise that resolves to true when the element is registered, or
  * false if loading failed.
  */
 function loadGo2rtcClient() {
-  return new Promise((resolve) => {
-    if (!GO2RTC_STREAM) { resolve(false); return; }
-    if (customElements.get('video-rtc')) { resolve(true); return; }
-    const script = document.createElement('script');
-    script.src = `${BASE}/api/go2rtc/client.js`;
-    script.onload = () => resolve(!!customElements.get('video-rtc'));
-    script.onerror = () => {
-      console.warn('go2rtc: could not load video-rtc.js – stream will not be available');
+  if (!GO2RTC_STREAM) return Promise.resolve(false);
+  if (customElements.get('video-stream')) return Promise.resolve(true);
+  if (go2rtcClientLoadPromise) return go2rtcClientLoadPromise;
+
+  go2rtcClientLoadPromise = new Promise((resolve) => {
+    const finish = () => resolve(!!customElements.get('video-stream'));
+    const existingScript = document.querySelector('script[data-go2rtc-client="1"]');
+    const script = existingScript || document.createElement('script');
+
+    if (!existingScript) {
+      script.dataset.go2rtcClient = '1';
+      script.src = `${BASE}/api/go2rtc/client.js`;
+      document.head.appendChild(script);
+    }
+
+    script.addEventListener('load', finish, { once: true });
+    script.addEventListener('error', () => {
+      console.warn('go2rtc: could not load client.js – stream will not be available');
       resolve(false);
-    };
-    document.head.appendChild(script);
+    }, { once: true });
+
+    if (script.readyState === 'complete' || customElements.get('video-stream')) {
+      finish();
+    }
+  }).finally(() => {
+    go2rtcClientLoadPromise = null;
   });
+
+  return go2rtcClientLoadPromise;
 }
 
 async function enableCamera() {

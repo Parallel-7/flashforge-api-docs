@@ -681,7 +681,7 @@ server.on('upgrade', (req, socket, head) => {
     return reqUrl.pathname;
   })();
 
-  if (!normalizedPath.endsWith('/api/go2rtc/ws') || !GO2RTC_URL) {
+  if (!normalizedPath.includes('/api/go2rtc/ws') || !GO2RTC_URL) {
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
     return;
