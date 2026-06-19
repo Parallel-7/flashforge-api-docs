@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FlashForge Dashboard</title>
   <link rel="stylesheet" href="style.css" />
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const ingressPath = window.INGRESS_PATH || '';
+      const go2rtcClient = document.createElement('script');
+      go2rtcClient.src = `${ingressPath}/api/go2rtc/client.js`;
+      go2rtcClient.defer = true;
+      document.head.appendChild(go2rtcClient);
+    });
+  </script>
 </head>
 <body>
   <header>
@@ -20,7 +29,7 @@
     <section class="card card--camera">
       <h2>Camera</h2>
       <div class="camera-wrap">
-        <video-rtc id="camera-rtc"></video-rtc>
+        <video-stream id="camera-rtc"></video-stream>
         <img id="camera-img" src="" alt="Camera stream" />
         <div id="camera-placeholder" class="camera-placeholder">
           <span>Camera non disponibile</span>
@@ -30,6 +39,20 @@
         <button id="btn-camera-on" class="btn btn--secondary">▶ Attiva camera</button>
         <button id="btn-camera-off" class="btn btn--secondary">⏹ Spegni camera</button>
       </div>
+      <script>
+        document.addEventListener('DOMContentLoaded', () => {
+          const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+          const streamName = window.GO2RTC_STREAM || 'Stampante';
+          const ingressPath = window.INGRESS_PATH || '';
+          const camera = document.getElementById('camera-rtc');
+          if (camera) {
+            camera.setAttribute(
+              'src',
+              wsProtocol + window.location.host + ingressPath + '/api/go2rtc/ws?src=' + encodeURIComponent(streamName),
+            );
+          }
+        });
+      </script>
     </section>
 
     <!-- ── Stato stampa ────────────────────────────────────── -->

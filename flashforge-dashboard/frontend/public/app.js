@@ -173,19 +173,19 @@ function updateUI(d) {
 /* ── Camera ──────────────────────────────────────────────────────────────── */
 
 /**
- * Lazily load the go2rtc video-rtc.js custom element from our proxy endpoint.
+ * Lazily load the go2rtc custom element client from our proxy endpoint.
  * Returns a Promise that resolves to true when the element is registered, or
  * false if loading failed.
  */
 function loadGo2rtcClient() {
   return new Promise((resolve) => {
     if (!GO2RTC_STREAM) { resolve(false); return; }
-    if (customElements.get('video-rtc')) { resolve(true); return; }
+    if (customElements.get('video-stream')) { resolve(true); return; }
     const script = document.createElement('script');
     script.src = `${BASE}/api/go2rtc/client.js`;
-    script.onload = () => resolve(!!customElements.get('video-rtc'));
+    script.onload = () => resolve(!!customElements.get('video-stream'));
     script.onerror = () => {
-      console.warn('go2rtc: could not load video-rtc.js – stream will not be available');
+      console.warn('go2rtc: could not load client.js – stream will not be available');
       resolve(false);
     };
     document.head.appendChild(script);
