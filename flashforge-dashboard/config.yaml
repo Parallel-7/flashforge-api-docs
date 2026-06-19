@@ -36,7 +36,7 @@ options:
   mqtt_username: ""
   mqtt_password: ""
   mqtt_base_topic: "flashforge"
-  frigate_url: ""
+  camera_url: "http://homeassistant.local:1984/api/stream.mjpeg?src=Stampante"
 
 schema:
   printer_ip: str
@@ -48,6 +48,6 @@ schema:
   mqtt_username: str?
   mqtt_password: password?
   mqtt_base_topic: str
-  frigate_url: str?
+  camera_url: str?
 
 url: "https://github.com/MikManenti/flashforge-api-docs"
