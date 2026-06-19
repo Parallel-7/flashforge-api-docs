@@ -48,6 +48,6 @@ schema:
   mqtt_username: str?
   mqtt_password: password?
   mqtt_base_topic: str
-  frigate_url: url?
+  frigate_url: str?
 
 url: "https://github.com/MikManenti/flashforge-api-docs"
