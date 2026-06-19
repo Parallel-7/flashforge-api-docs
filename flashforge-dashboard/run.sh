@@ -18,7 +18,7 @@ export MQTT_PORT="$(bashio::config 'mqtt_port')"
 export MQTT_USERNAME="$(bashio::config 'mqtt_username')"
 export MQTT_PASSWORD="$(bashio::config 'mqtt_password')"
 export MQTT_BASE_TOPIC="$(bashio::config 'mqtt_base_topic')"
-export FRIGATE_URL="$(bashio::config 'camera_url')"
+export CAMERA_ENTITY="$(bashio::config 'camera_entity')"
 
 if bashio::config.is_empty 'printer_ip'; then
   bashio::log.warning "printer_ip is not configured. Set it in the add-on Configuration tab."
