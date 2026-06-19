@@ -199,7 +199,9 @@ async function enableCamera() {
     const ready = await loadGo2rtcClient();
     if (ready) {
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      cameraRtc.src = `${wsProtocol}//${window.location.host}${BASE}/api/go2rtc/ws?src=${encodeURIComponent(GO2RTC_STREAM)}`;
+      const wsUrl = new URL(`${BASE}/api/go2rtc/ws`, `${wsProtocol}//${window.location.host}`);
+      wsUrl.searchParams.set('src', GO2RTC_STREAM);
+      cameraRtc.src = wsUrl.toString();
       cameraRtc.classList.add('active');
       cameraImg.src = '';
       cameraImg.classList.remove('active');

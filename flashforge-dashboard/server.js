@@ -736,6 +736,14 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
+  // Sec-WebSocket-Key is mandatory per RFC 6455; reject early if absent.
+  const wsKey = req.headers['sec-websocket-key'];
+  if (!wsKey) {
+    socket.write('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
   // Forward any extra query params (e.g. media preferences from video-rtc.js)
   const extraParams = [];
   reqUrl.searchParams.forEach((val, key) => {
@@ -754,7 +762,7 @@ server.on('upgrade', (req, socket, head) => {
       `Upgrade: websocket`,
       `Connection: Upgrade`,
       `Sec-WebSocket-Version: ${req.headers['sec-websocket-version'] || '13'}`,
-      `Sec-WebSocket-Key: ${req.headers['sec-websocket-key'] || ''}`,
+      `Sec-WebSocket-Key: ${wsKey}`,
     ];
     if (req.headers['sec-websocket-protocol']) {
       lines.push(`Sec-WebSocket-Protocol: ${req.headers['sec-websocket-protocol']}`);
@@ -771,6 +779,10 @@ server.on('upgrade', (req, socket, head) => {
   socket.on('close', () => { if (!proxySocket.destroyed) proxySocket.destroy(); });
   proxySocket.on('close', () => { if (!socket.destroyed) socket.destroy(); });
 
+  // Transparent TCP tunnel: all bytes (including the HTTP 101 upgrade response
+  // from go2rtc) are forwarded verbatim to the browser. The browser validates
+  // the handshake; if go2rtc rejects (e.g. returns 4xx), the browser receives
+  // that HTTP response and correctly fails the WebSocket connection.
   proxySocket.pipe(socket);
   socket.pipe(proxySocket);
 });
