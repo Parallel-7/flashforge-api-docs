@@ -9,6 +9,7 @@ const mqtt = require('mqtt');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 8099;
@@ -25,7 +26,8 @@ const KNOWN_MQTT_COMMAND_PAYLOADS = new Set([
 const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\/$/, '');
 
 const PRINTER_API = `http://${PRINTER_IP}:8898`;
-const CAMERA_URL = `http://${PRINTER_IP}:8080/?action=stream`;
+const FRIGATE_URL = (process.env.FRIGATE_URL || '').trim();
+const CAMERA_URL = FRIGATE_URL || (PRINTER_IP ? `http://${PRINTER_IP}:8080/?action=stream` : '');
 const MQTT_ENABLED = parseBooleanEnv(process.env.MQTT_ENABLED, true);
 const MQTT_HOST = process.env.MQTT_HOST || 'core-mosquitto';
 const MQTT_PORT = Number(process.env.MQTT_PORT || 1883);
@@ -301,7 +303,9 @@ async function handleMqttCommand(topic, payloadRaw) {
 
   if (topic === `${MQTT_ROOT_TOPIC}/command/camera`) {
     const action = ['OPEN', 'ON', '1', 'TRUE'].includes(payload) ? 'open' : 'close';
-    await printerControl('streamCtrl_cmd', { action });
+    if (!FRIGATE_URL) {
+      await printerControl('streamCtrl_cmd', { action });
+    }
     cameraSwitchState = action === 'open' ? 'ON' : 'OFF';
     mqttPublish(`${MQTT_ROOT_TOPIC}/state/camera_switch`, cameraSwitchState, { retain: true });
     return;
@@ -552,19 +556,23 @@ app.post('/api/upload', requireConfig, upload.single('gcodeFile'), async (req, r
 
 /**
  * GET /api/camera/stream
- * Proxies the MJPEG stream from the printer camera so the browser
- * can display it without cross-origin issues.
+ * Proxies the MJPEG stream from Frigate (or the printer camera as fallback)
+ * so the browser can display it without cross-origin issues.
  */
 app.get('/api/camera/stream', requireConfig, (req, res) => {
+  if (!CAMERA_URL) {
+    return res.status(503).json({ error: 'No camera source configured' });
+  }
   const url = new URL(CAMERA_URL);
+  const transport = url.protocol === 'https:' ? https : http;
   const options = {
     hostname: url.hostname,
-    port: url.port || 8080,
+    port: url.port || (url.protocol === 'https:' ? 443 : 80),
     path: url.pathname + url.search,
     method: 'GET',
   };
 
-  const proxyReq = http.request(options, (proxyRes) => {
+  const proxyReq = transport.request(options, (proxyRes) => {
     res.writeHead(proxyRes.statusCode, {
       'Content-Type': proxyRes.headers['content-type'] || 'multipart/x-mixed-replace',
       'Cache-Control': 'no-cache',
@@ -586,13 +594,18 @@ app.get('/api/camera/stream', requireConfig, (req, res) => {
 /**
  * POST /api/camera
  * Body: { action: "open"|"close" }
- * Enables or disables the camera stream on the printer.
+ * Enables or disables the camera stream.
+ * When Frigate is configured the printer's streamCtrl_cmd is skipped
+ * because Frigate manages the stream independently.
  */
 app.post('/api/camera', requireConfig, async (req, res) => {
   const { action } = req.body;
   if (!action) return res.status(400).json({ error: 'action is required' });
   try {
-    const data = await printerControl('streamCtrl_cmd', { action });
+    let data = {};
+    if (!FRIGATE_URL) {
+      data = await printerControl('streamCtrl_cmd', { action });
+    }
     cameraSwitchState = action === 'open' ? 'ON' : 'OFF';
     mqttPublish(`${MQTT_ROOT_TOPIC}/state/camera_switch`, cameraSwitchState, { retain: true });
     res.json(data);
@@ -603,10 +616,12 @@ app.post('/api/camera', requireConfig, async (req, res) => {
 
 // ── Config check endpoint ────────────────────────────────────────────────────
 app.get('/api/config', (req, res) => {
+  const hasCameraSource = !!(FRIGATE_URL || PRINTER_IP);
   res.json({
     configured: !!(PRINTER_IP && SERIAL_NUMBER && CHECK_CODE),
     printerIp: PRINTER_IP || null,
-    cameraUrl: PRINTER_IP ? CAMERA_URL : null,
+    cameraUrl: hasCameraSource ? `${INGRESS_PATH}/api/camera/stream` : null,
+    frigateEnabled: !!FRIGATE_URL,
     ingressPath: INGRESS_PATH,
   });
 });

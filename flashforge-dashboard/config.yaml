@@ -36,6 +36,7 @@ options:
   mqtt_username: ""
   mqtt_password: ""
   mqtt_base_topic: "flashforge"
+  frigate_url: ""
 
 schema:
   printer_ip: str
@@ -47,5 +48,6 @@ schema:
   mqtt_username: str?
   mqtt_password: password?
   mqtt_base_topic: str
+  frigate_url: url?
 
 url: "https://github.com/MikManenti/flashforge-api-docs"
