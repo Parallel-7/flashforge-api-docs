@@ -27,7 +27,7 @@ const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\/$/, '');
 
 const PRINTER_API = `http://${PRINTER_IP}:8898`;
 const FRIGATE_URL = (process.env.FRIGATE_URL || '').trim();
-const CAMERA_URL = FRIGATE_URL || (PRINTER_IP ? `http://${PRINTER_IP}:8080/?action=stream` : '');
+const CAMERA_URL = FRIGATE_URL || (PRINTER_IP ? `http://${PRINTER_IP}:8080/?action=stream` : null);
 const MQTT_ENABLED = parseBooleanEnv(process.env.MQTT_ENABLED, true);
 const MQTT_HOST = process.env.MQTT_HOST || 'core-mosquitto';
 const MQTT_PORT = Number(process.env.MQTT_PORT || 1883);
@@ -616,11 +616,10 @@ app.post('/api/camera', requireConfig, async (req, res) => {
 
 // ── Config check endpoint ────────────────────────────────────────────────────
 app.get('/api/config', (req, res) => {
-  const hasCameraSource = !!(FRIGATE_URL || PRINTER_IP);
   res.json({
     configured: !!(PRINTER_IP && SERIAL_NUMBER && CHECK_CODE),
     printerIp: PRINTER_IP || null,
-    cameraUrl: hasCameraSource ? `${INGRESS_PATH}/api/camera/stream` : null,
+    cameraUrl: CAMERA_URL ? `${INGRESS_PATH}/api/camera/stream` : null,
     frigateEnabled: !!FRIGATE_URL,
     ingressPath: INGRESS_PATH,
   });
