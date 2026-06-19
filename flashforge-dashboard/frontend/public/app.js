@@ -18,8 +18,6 @@ const GO2RTC_STREAM = window.GO2RTC_STREAM || null;
 let currentJobID = null;
 let currentStatus = null;
 let pollingTimer = null;
-let cameraActive = false;
-let cameraStreamUrl = null;
 
 /* ── DOM refs ────────────────────────────────────────────────────────────── */
 const badge          = document.getElementById('status-badge');
@@ -206,17 +204,11 @@ async function enableCamera() {
       cameraImg.src = '';
       cameraImg.classList.remove('active');
       cameraPlaceholder.classList.add('hidden');
-      cameraActive = true;
       return;
     }
-    // Fall through to MJPEG if video-rtc.js failed to load
   }
-  if (!cameraStreamUrl) return;
-  cameraImg.src = cameraStreamUrl;
-  cameraImg.classList.add('active');
-  cameraRtc.classList.remove('active');
-  cameraPlaceholder.classList.add('hidden');
-  cameraActive = true;
+  // go2rtc not available or failed to load — show placeholder
+  cameraPlaceholder.classList.remove('hidden');
 }
 
 function disableCamera() {
@@ -225,11 +217,10 @@ function disableCamera() {
   cameraImg.src = '';
   cameraImg.classList.remove('active');
   cameraPlaceholder.classList.remove('hidden');
-  cameraActive = false;
 }
 
 btnCameraOn.addEventListener('click', async () => {
-  if (!GO2RTC_STREAM && !cameraStreamUrl) return;
+  if (!GO2RTC_STREAM) return;
   try {
     await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'open' }) });
   } catch (_) { /* ignore – try to show stream anyway */ }
@@ -241,10 +232,6 @@ btnCameraOff.addEventListener('click', async () => {
   try {
     await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'close' }) });
   } catch (_) { /* ignore */ }
-});
-
-cameraImg.addEventListener('error', () => {
-  disableCamera();
 });
 
 /* ── Print controls ──────────────────────────────────────────────────────── */
@@ -491,7 +478,6 @@ function setUploadPct(pct) {
   // Check configuration
   try {
     const cfg = await fetch(`${BASE}/api/config`).then(r => r.json());
-    if (cfg.cameraUrl) cameraStreamUrl = cfg.cameraUrl;
     if (!cfg.configured) {
       badge.textContent = 'NON CONFIGURATO';
       badge.className = 'badge badge--error';
