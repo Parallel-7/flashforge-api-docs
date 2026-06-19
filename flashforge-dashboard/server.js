@@ -9,6 +9,7 @@ const mqtt = require('mqtt');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const net = require('net');
 
 const app = express();
 const PORT = process.env.PORT || 8099;
@@ -27,6 +28,8 @@ const INGRESS_PATH = (process.env.INGRESS_PATH || '').replace(/\/$/, '');
 const PRINTER_API = `http://${PRINTER_IP}:8898`;
 const CAMERA_ENTITY = (process.env.CAMERA_ENTITY || '').trim();
 const SUPERVISOR_TOKEN = process.env.SUPERVISOR_TOKEN || '';
+const GO2RTC_URL = (process.env.GO2RTC_URL || '').replace(/\/$/, '');
+const GO2RTC_STREAM = (process.env.GO2RTC_STREAM || '').trim();
 const MQTT_ENABLED = parseBooleanEnv(process.env.MQTT_ENABLED, true);
 const MQTT_HOST = process.env.MQTT_HOST || 'core-mosquitto';
 const MQTT_PORT = Number(process.env.MQTT_PORT || 1883);
@@ -603,12 +606,62 @@ app.post('/api/camera', requireConfig, async (req, res) => {
   res.json({});
 });
 
+// ── go2rtc integration ───────────────────────────────────────────────────────
+
+/** Server-side cache for video-rtc.js to avoid fetching it on every page load. */
+let cachedVideoRtcJs = null;
+let cachedVideoRtcJsAt = 0;
+const VIDEO_RTC_CACHE_TTL_MS = 3600000; // 1 hour
+
+/**
+ * GET /api/go2rtc/client.js
+ * Proxies the video-rtc.js player component from the local go2rtc add-on so
+ * the browser can load it from the same origin (no CORS issues).
+ * The response is cached server-side for one hour.
+ */
+app.get('/api/go2rtc/client.js', async (req, res) => {
+  if (!GO2RTC_URL) {
+    return res.status(503).send('// go2rtc_url not configured\n');
+  }
+
+  const now = Date.now();
+  if (cachedVideoRtcJs && (now - cachedVideoRtcJsAt) < VIDEO_RTC_CACHE_TTL_MS) {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'max-age=3600');
+    return res.send(cachedVideoRtcJs);
+  }
+
+  try {
+    const upstream = await fetch(`${GO2RTC_URL}/video-rtc.js`);
+    if (!upstream.ok) {
+      if (cachedVideoRtcJs) {
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        return res.send(cachedVideoRtcJs); // serve stale on error
+      }
+      return res.status(upstream.status).send(`// go2rtc returned ${upstream.status}\n`);
+    }
+    cachedVideoRtcJs = await upstream.text();
+    cachedVideoRtcJsAt = now;
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'max-age=3600');
+    res.send(cachedVideoRtcJs);
+  } catch (err) {
+    if (cachedVideoRtcJs) {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      return res.send(cachedVideoRtcJs); // serve stale on error
+    }
+    res.status(502).send(`// go2rtc client error: ${err.message}\n`);
+  }
+});
+
 // ── Config check endpoint ────────────────────────────────────────────────────
 app.get('/api/config', (req, res) => {
   res.json({
     configured: !!(PRINTER_IP && SERIAL_NUMBER && CHECK_CODE),
     printerIp: PRINTER_IP || null,
     cameraUrl: CAMERA_ENTITY ? `${INGRESS_PATH}/api/camera/stream` : null,
+    go2rtcConfigured: !!(GO2RTC_URL && GO2RTC_STREAM),
+    go2rtcStream: GO2RTC_STREAM || null,
     ingressPath: INGRESS_PATH,
   });
 });
@@ -622,8 +675,11 @@ const INDEX_HTML_PATH = path.join(__dirname, 'frontend', 'public', 'index.html')
 const indexHtmlBase = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 
 function serveIndex(req, res) {
-  const script = `<script>window.INGRESS_PATH = '${INGRESS_PATH}';</script>\n`;
-  const html = indexHtmlBase.replace('</head>', `  ${script}</head>`);
+  let headInject = `<script>window.INGRESS_PATH = '${INGRESS_PATH}';</script>`;
+  if (GO2RTC_URL && GO2RTC_STREAM) {
+    headInject += `\n  <script>window.GO2RTC_STREAM = ${JSON.stringify(GO2RTC_STREAM)};</script>`;
+  }
+  const html = indexHtmlBase.replace('</head>', `  ${headInject}\n</head>`);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);
 }
@@ -631,7 +687,7 @@ function serveIndex(req, res) {
 app.get('*', serveIndex);
 
 // ── Start ────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`FlashForge Dashboard (HA add-on) running on port ${PORT}`);
   console.log(`Ingress path: ${INGRESS_PATH || '(none)'}`);
   console.log(`Direct HTTP URL: http://<HOST_IP>:${PORT}`);
@@ -644,6 +700,79 @@ app.listen(PORT, () => {
       refreshPrinterState();
     }, MQTT_POLL_INTERVAL_MS);
   }
+});
+
+/**
+ * WebSocket proxy for go2rtc.
+ * The browser connects (via HA Ingress) to ws://.../api/go2rtc/ws?src={stream}.
+ * This handler relays those frames to go2rtc's ws://GO2RTC_URL/api/ws?src={stream}
+ * over plain TCP (no CORS, no Mixed-Content, works inside Docker networks).
+ */
+server.on('upgrade', (req, socket, head) => {
+  let reqUrl;
+  try { reqUrl = new URL(req.url, 'http://localhost'); } catch (_) {
+    socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  if (!reqUrl.pathname.startsWith('/api/go2rtc/ws') || !GO2RTC_URL) {
+    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  let go2rtcBase;
+  try { go2rtcBase = new URL(GO2RTC_URL); } catch (_) {
+    socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  const stream = reqUrl.searchParams.get('src') || GO2RTC_STREAM;
+  if (!stream) {
+    socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  // Forward any extra query params (e.g. media preferences from video-rtc.js)
+  const extraParams = [];
+  reqUrl.searchParams.forEach((val, key) => {
+    if (key !== 'src') extraParams.push(`${encodeURIComponent(key)}=${encodeURIComponent(val)}`);
+  });
+  let upstreamPath = `/api/ws?src=${encodeURIComponent(stream)}`;
+  if (extraParams.length) upstreamPath += `&${extraParams.join('&')}`;
+
+  const go2rtcHost = go2rtcBase.hostname;
+  const go2rtcPort = parseInt(go2rtcBase.port, 10) || (go2rtcBase.protocol === 'https:' ? 443 : 80);
+
+  const proxySocket = net.connect(go2rtcPort, go2rtcHost, () => {
+    const lines = [
+      `GET ${upstreamPath} HTTP/1.1`,
+      `Host: ${go2rtcHost}:${go2rtcPort}`,
+      `Upgrade: websocket`,
+      `Connection: Upgrade`,
+      `Sec-WebSocket-Version: ${req.headers['sec-websocket-version'] || '13'}`,
+      `Sec-WebSocket-Key: ${req.headers['sec-websocket-key'] || ''}`,
+    ];
+    if (req.headers['sec-websocket-protocol']) {
+      lines.push(`Sec-WebSocket-Protocol: ${req.headers['sec-websocket-protocol']}`);
+    }
+    lines.push('', '');
+    proxySocket.write(lines.join('\r\n'));
+  });
+
+  proxySocket.on('error', (err) => {
+    console.warn(`go2rtc WebSocket proxy error: ${err.message}`);
+    if (!socket.destroyed) socket.destroy();
+  });
+  socket.on('error', () => { if (!proxySocket.destroyed) proxySocket.destroy(); });
+  socket.on('close', () => { if (!proxySocket.destroyed) proxySocket.destroy(); });
+  proxySocket.on('close', () => { if (!socket.destroyed) socket.destroy(); });
+
+  proxySocket.pipe(socket);
+  socket.pipe(proxySocket);
 });
 
 function shutdown() {
@@ -660,7 +789,9 @@ function shutdown() {
       console.warn(`MQTT shutdown warning: ${err.message}`);
     }
   }
-  process.exit(0);
+  server.close(() => process.exit(0));
+  // Ensure we exit even if server.close hangs (e.g. open WebSocket connections)
+  setTimeout(() => process.exit(0), 3000).unref();
 }
 
 process.on('SIGTERM', shutdown);

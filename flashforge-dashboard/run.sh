@@ -19,6 +19,8 @@ export MQTT_USERNAME="$(bashio::config 'mqtt_username')"
 export MQTT_PASSWORD="$(bashio::config 'mqtt_password')"
 export MQTT_BASE_TOPIC="$(bashio::config 'mqtt_base_topic')"
 export CAMERA_ENTITY="$(bashio::config 'camera_entity')"
+export GO2RTC_URL="$(bashio::config 'go2rtc_url')"
+export GO2RTC_STREAM="$(bashio::config 'go2rtc_stream')"
 
 if bashio::config.is_empty 'printer_ip'; then
   bashio::log.warning "printer_ip is not configured. Set it in the add-on Configuration tab."
@@ -34,5 +36,8 @@ bashio::log.info "Printer IP: ${PRINTER_IP}"
 bashio::log.info "Listening on port ${PORT}"
 bashio::log.info "MQTT enabled: ${MQTT_ENABLED}"
 bashio::log.info "MQTT broker: ${MQTT_HOST}:${MQTT_PORT}"
+if [ -n "${GO2RTC_STREAM}" ]; then
+  bashio::log.info "go2rtc URL: ${GO2RTC_URL} / stream: ${GO2RTC_STREAM}"
+fi
 
 exec node /app/server.js
