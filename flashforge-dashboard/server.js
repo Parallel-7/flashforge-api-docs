@@ -673,7 +673,15 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
-  if (!reqUrl.pathname.startsWith('/api/go2rtc/ws') || !GO2RTC_URL) {
+  const normalizedPath = (() => {
+    const ingressPrefix = (INGRESS_PATH || '').trim().replace(/\/+$/, '');
+    if (ingressPrefix && reqUrl.pathname.startsWith(`${ingressPrefix}/`)) {
+      return reqUrl.pathname.slice(ingressPrefix.length);
+    }
+    return reqUrl.pathname;
+  })();
+
+  if (!normalizedPath.endsWith('/api/go2rtc/ws') || !GO2RTC_URL) {
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
     return;
@@ -701,31 +709,30 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
-  // Forward any extra query params (e.g. media preferences from video-rtc.js)
-  const extraParams = [];
-  reqUrl.searchParams.forEach((val, key) => {
-    if (key !== 'src') extraParams.push(`${encodeURIComponent(key)}=${encodeURIComponent(val)}`);
-  });
-  let upstreamPath = `/api/ws?src=${encodeURIComponent(stream)}`;
-  if (extraParams.length) upstreamPath += `&${extraParams.join('&')}`;
+  const upstreamPath = `/api/ws?src=${encodeURIComponent(stream)}`;
 
   const go2rtcHost = go2rtcBase.hostname;
   const go2rtcPort = parseInt(go2rtcBase.port, 10) || (go2rtcBase.protocol === 'https:' ? 443 : 80);
+  const upstreamHost = `${go2rtcHost}:${go2rtcPort}`;
 
   const proxySocket = net.connect(go2rtcPort, go2rtcHost, () => {
-    const lines = [
-      `GET ${upstreamPath} HTTP/1.1`,
-      `Host: ${go2rtcHost}:${go2rtcPort}`,
-      `Upgrade: websocket`,
-      `Connection: Upgrade`,
-      `Sec-WebSocket-Version: ${req.headers['sec-websocket-version'] || '13'}`,
-      `Sec-WebSocket-Key: ${wsKey}`,
-    ];
-    if (req.headers['sec-websocket-protocol']) {
-      lines.push(`Sec-WebSocket-Protocol: ${req.headers['sec-websocket-protocol']}`);
+    const upstreamHeaders = {
+      ...req.headers,
+      host: upstreamHost,
+    };
+
+    const lines = [`GET ${upstreamPath} HTTP/1.1`];
+    for (const [name, value] of Object.entries(upstreamHeaders)) {
+      if (typeof value === 'undefined') continue;
+      if (Array.isArray(value)) {
+        for (const item of value) lines.push(`${name}: ${item}`);
+      } else {
+        lines.push(`${name}: ${value}`);
+      }
     }
     lines.push('', '');
     proxySocket.write(lines.join('\r\n'));
+    if (head && head.length) proxySocket.write(head);
   });
 
   proxySocket.on('error', (err) => {
