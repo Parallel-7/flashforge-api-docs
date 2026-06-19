@@ -11,6 +11,9 @@ function detectIngressFromPath(pathname) {
 const detectedIngress = detectIngressFromPath(window.location.pathname);
 const BASE = (window.INGRESS_PATH || detectedIngress || '').replace(/\/$/, '');
 
+/** Stream name injected by server.js when go2rtc is configured, otherwise null. */
+const GO2RTC_STREAM = window.GO2RTC_STREAM || null;
+
 /* ── State ───────────────────────────────────────────────────────────────── */
 let currentJobID = null;
 let currentStatus = null;
@@ -20,6 +23,7 @@ let cameraStreamUrl = null;
 
 /* ── DOM refs ────────────────────────────────────────────────────────────── */
 const badge          = document.getElementById('status-badge');
+const cameraRtc      = document.getElementById('camera-rtc');
 const cameraImg      = document.getElementById('camera-img');
 const cameraPlaceholder = document.getElementById('camera-placeholder');
 const btnCameraOn    = document.getElementById('btn-camera-on');
@@ -169,14 +173,55 @@ function updateUI(d) {
 }
 
 /* ── Camera ──────────────────────────────────────────────────────────────── */
-function enableCamera() {
+
+/**
+ * Lazily load the go2rtc video-rtc.js custom element from our proxy endpoint.
+ * Returns a Promise that resolves to true when the element is registered, or
+ * false if loading failed.
+ */
+function loadGo2rtcClient() {
+  return new Promise((resolve) => {
+    if (!GO2RTC_STREAM) { resolve(false); return; }
+    if (customElements.get('video-rtc')) { resolve(true); return; }
+    const script = document.createElement('script');
+    script.src = `${BASE}/api/go2rtc/client.js`;
+    script.onload = () => resolve(!!customElements.get('video-rtc'));
+    script.onerror = () => {
+      console.warn('go2rtc: could not load video-rtc.js – stream will not be available');
+      resolve(false);
+    };
+    document.head.appendChild(script);
+  });
+}
+
+async function enableCamera() {
+  if (GO2RTC_STREAM) {
+    const ready = await loadGo2rtcClient();
+    if (ready) {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = new URL(`${BASE}/api/go2rtc/ws`, `${wsProtocol}//${window.location.host}`);
+      wsUrl.searchParams.set('src', GO2RTC_STREAM);
+      cameraRtc.src = wsUrl.toString();
+      cameraRtc.classList.add('active');
+      cameraImg.src = '';
+      cameraImg.classList.remove('active');
+      cameraPlaceholder.classList.add('hidden');
+      cameraActive = true;
+      return;
+    }
+    // Fall through to MJPEG if video-rtc.js failed to load
+  }
   if (!cameraStreamUrl) return;
   cameraImg.src = cameraStreamUrl;
   cameraImg.classList.add('active');
+  cameraRtc.classList.remove('active');
   cameraPlaceholder.classList.add('hidden');
   cameraActive = true;
 }
+
 function disableCamera() {
+  if (cameraRtc.src) cameraRtc.src = '';
+  cameraRtc.classList.remove('active');
   cameraImg.src = '';
   cameraImg.classList.remove('active');
   cameraPlaceholder.classList.remove('hidden');
@@ -184,10 +229,11 @@ function disableCamera() {
 }
 
 btnCameraOn.addEventListener('click', async () => {
+  if (!GO2RTC_STREAM && !cameraStreamUrl) return;
   try {
     await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'open' }) });
   } catch (_) { /* ignore – try to show stream anyway */ }
-  enableCamera();
+  await enableCamera();
 });
 
 btnCameraOff.addEventListener('click', async () => {

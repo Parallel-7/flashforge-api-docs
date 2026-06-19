@@ -96,6 +96,19 @@ main {
   position: relative;
   margin-bottom: 12px;
 }
+#camera-rtc {
+  width: 100%;
+  height: 100%;
+  display: none;
+  background: #000;
+}
+#camera-rtc.active { display: block; }
+/* video element rendered inside video-rtc custom element */
+#camera-rtc video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
 #camera-img {
   width: 100%;
   height: 100%;
