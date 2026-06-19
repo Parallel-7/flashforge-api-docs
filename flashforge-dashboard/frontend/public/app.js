@@ -18,7 +18,6 @@ const GO2RTC_STREAM = window.GO2RTC_STREAM || null;
 let currentJobID = null;
 let currentStatus = null;
 let pollingTimer = null;
-let go2rtcClientLoadPromise = null;
 
 /* ── DOM refs ────────────────────────────────────────────────────────────── */
 const badge          = document.getElementById('status-badge');
@@ -174,59 +173,29 @@ function updateUI(d) {
 /* ── Camera ──────────────────────────────────────────────────────────────── */
 
 /**
- * Lazily load the go2rtc custom element client from our proxy endpoint.
- * Returns a Promise that resolves to true when the element is registered, or
- * false if loading failed.
+ * Initialise (or re-initialise) the camera stream.
+ * client.js is loaded statically in index.html with `defer`, so the
+ * `<video-stream>` custom element will be registered before or shortly after
+ * this runs. Setting `src` before registration is safe: the browser queues the
+ * attribute and processes it once the element is upgraded.
  */
-function loadGo2rtcClient() {
-  if (!GO2RTC_STREAM) return Promise.resolve(false);
-  if (customElements.get('video-stream')) return Promise.resolve(true);
-  if (go2rtcClientLoadPromise) return go2rtcClientLoadPromise;
-
-  go2rtcClientLoadPromise = new Promise((resolve) => {
-    const finish = () => resolve(!!customElements.get('video-stream'));
-    const existingScript = document.querySelector('script[data-go2rtc-client="1"]');
-    const script = existingScript || document.createElement('script');
-
-    if (!existingScript) {
-      script.dataset.go2rtcClient = '1';
-      script.src = `${BASE}/api/go2rtc/client.js`;
-      document.head.appendChild(script);
-    }
-
-    script.addEventListener('load', finish, { once: true });
-    script.addEventListener('error', () => {
-      console.warn('go2rtc: could not load client.js – stream will not be available');
-      resolve(false);
-    }, { once: true });
-
-    if (script.readyState === 'complete' || customElements.get('video-stream')) {
-      finish();
-    }
-  }).finally(() => {
-    go2rtcClientLoadPromise = null;
-  });
-
-  return go2rtcClientLoadPromise;
-}
-
-async function enableCamera() {
-  if (GO2RTC_STREAM) {
-    const ready = await loadGo2rtcClient();
-    if (ready) {
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = new URL(`${BASE}/api/go2rtc/ws`, `${wsProtocol}//${window.location.host}`);
-      wsUrl.searchParams.set('src', GO2RTC_STREAM);
-      cameraRtc.src = wsUrl.toString();
-      cameraRtc.classList.add('active');
-      cameraImg.src = '';
-      cameraImg.classList.remove('active');
-      cameraPlaceholder.classList.add('hidden');
-      return;
-    }
+function initCamera() {
+  if (!GO2RTC_STREAM) {
+    console.log('Camera component skipped: GO2RTC_STREAM is not configured');
+    cameraPlaceholder.classList.remove('hidden');
+    cameraRtc.classList.remove('active');
+    cameraImg.classList.remove('active');
+    return;
   }
-  // go2rtc not available or failed to load — show placeholder
-  cameraPlaceholder.classList.remove('hidden');
+
+  cameraPlaceholder.classList.add('hidden');
+  cameraImg.classList.remove('active');
+  cameraRtc.classList.add('active');
+
+  const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${wsProto}//${window.location.host}${BASE}/api/go2rtc/ws?src=${encodeURIComponent(GO2RTC_STREAM)}`;
+  console.log(`Initializing video-stream target: ${wsUrl}`);
+  cameraRtc.setAttribute('src', wsUrl);
 }
 
 function disableCamera() {
@@ -242,7 +211,7 @@ btnCameraOn.addEventListener('click', async () => {
   try {
     await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'open' }) });
   } catch (_) { /* ignore – try to show stream anyway */ }
-  await enableCamera();
+  initCamera();
 });
 
 btnCameraOff.addEventListener('click', async () => {
@@ -510,6 +479,7 @@ function setUploadPct(pct) {
     }
   } catch (_) { /* proceed anyway */ }
 
+  initCamera();
   await fetchStatus();
   pollingTimer = setInterval(fetchStatus, 4000);
 })();
