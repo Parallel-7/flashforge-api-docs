@@ -671,22 +671,27 @@ server.listen(PORT, () => {
 });
 
 server.on('upgrade', (req, socket, head) => {
-  let reqUrl;
+  let urlPath = req.url || '/';
+  if (INGRESS_PATH && urlPath.startsWith(INGRESS_PATH)) {
+    urlPath = urlPath.substring(INGRESS_PATH.length) || '/';
+  }
+
+  let urlObj;
   try {
-    reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    urlObj = new URL(urlPath, 'http://localhost');
   } catch (_) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
     socket.destroy();
     return;
   }
 
-  if (!reqUrl.pathname.startsWith('/api/go2rtc/ws')) {
+  if (!urlObj.pathname.startsWith('/api/go2rtc/ws')) {
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
     return;
   }
 
-  const streamName = reqUrl.searchParams.get('src') || GO2RTC_STREAM;
+  const streamName = urlObj.searchParams.get('src') || GO2RTC_STREAM;
   const targetPath = `/api/ws?src=${encodeURIComponent(streamName)}`;
   const wsKey = req.headers['sec-websocket-key'];
   if (!wsKey) {
