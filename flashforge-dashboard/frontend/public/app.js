@@ -18,7 +18,6 @@ const GO2RTC_STREAM = window.GO2RTC_STREAM || null;
 let currentJobID = null;
 let currentStatus = null;
 let pollingTimer = null;
-let cameraActive = false;
 
 /* ── DOM refs ────────────────────────────────────────────────────────────── */
 const badge          = document.getElementById('status-badge');
@@ -205,10 +204,10 @@ async function enableCamera() {
       cameraImg.src = '';
       cameraImg.classList.remove('active');
       cameraPlaceholder.classList.add('hidden');
-      cameraActive = true;
       return;
     }
   }
+  // go2rtc not available or failed to load — show placeholder
   cameraPlaceholder.classList.remove('hidden');
 }
 
@@ -218,7 +217,6 @@ function disableCamera() {
   cameraImg.src = '';
   cameraImg.classList.remove('active');
   cameraPlaceholder.classList.remove('hidden');
-  cameraActive = false;
 }
 
 btnCameraOn.addEventListener('click', async () => {
