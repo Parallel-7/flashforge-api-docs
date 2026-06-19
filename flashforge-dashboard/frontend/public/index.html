@@ -5,16 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FlashForge Dashboard</title>
   <link rel="stylesheet" href="style.css" />
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      const ingressPath = window.INGRESS_PATH || '';
-      const go2rtcClient = document.createElement('script');
-      go2rtcClient.dataset.go2rtcClient = '1';
-      go2rtcClient.src = `${ingressPath}/api/go2rtc/client.js`;
-      go2rtcClient.defer = true;
-      document.head.appendChild(go2rtcClient);
-    });
-  </script>
+  <!-- go2rtc video-stream custom element; loaded via relative path so it
+       resolves correctly both in standalone mode and under HA Ingress. -->
+  <script src="api/go2rtc/client.js" defer></script>
 </head>
 <body>
   <header>
@@ -40,20 +33,7 @@
         <button id="btn-camera-on" class="btn btn--secondary">▶ Attiva camera</button>
         <button id="btn-camera-off" class="btn btn--secondary">⏹ Spegni camera</button>
       </div>
-      <script>
-        document.addEventListener('DOMContentLoaded', () => {
-          const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-          const streamName = window.GO2RTC_STREAM || 'Stampante';
-          const ingressPath = window.INGRESS_PATH || '';
-          const camera = document.getElementById('camera-rtc');
-          if (camera) {
-            camera.setAttribute(
-              'src',
-              wsProtocol + window.location.host + ingressPath + '/api/go2rtc/ws?src=' + encodeURIComponent(streamName),
-            );
-          }
-        });
-      </script>
+
     </section>
 
     <!-- ── Stato stampa ────────────────────────────────────── -->

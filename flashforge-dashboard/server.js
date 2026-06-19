@@ -664,24 +664,25 @@ const server = app.listen(PORT, () => {
  * The browser connects (via HA Ingress) to ws://.../api/go2rtc/ws?src={stream}.
  * This handler relays those frames to go2rtc's ws://GO2RTC_URL/api/ws?src={stream}
  * over plain TCP (no CORS, no Mixed-Content, works inside Docker networks).
+ *
+ * Path check is permissive (includes) so dynamic Ingress prefixes are handled
+ * without relying on the INGRESS_PATH env var being set.
  */
 server.on('upgrade', (req, socket, head) => {
   let reqUrl;
-  try { reqUrl = new URL(req.url, 'http://localhost'); } catch (_) {
+  try {
+    reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  } catch (_) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
     socket.destroy();
     return;
   }
 
-  const normalizedPath = (() => {
-    const ingressPrefix = (INGRESS_PATH || '').trim().replace(/\/+$/, '');
-    if (ingressPrefix && reqUrl.pathname.startsWith(`${ingressPrefix}/`)) {
-      return reqUrl.pathname.slice(ingressPrefix.length);
-    }
-    return reqUrl.pathname;
-  })();
+  const pathname = reqUrl.pathname;
 
-  if (!normalizedPath.includes('/api/go2rtc/ws') || !GO2RTC_URL) {
+  // Permissive check: Ingress may prepend a dynamic prefix, so we only
+  // verify that the path contains the expected endpoint segment.
+  if (!pathname.includes('/api/go2rtc/ws') || !GO2RTC_URL) {
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
     return;
@@ -694,41 +695,22 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
-  const stream = reqUrl.searchParams.get('src') || GO2RTC_STREAM;
-  if (!stream) {
-    socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-
-  // Sec-WebSocket-Key is mandatory per RFC 6455; reject early if absent.
-  const wsKey = req.headers['sec-websocket-key'];
-  if (!wsKey) {
-    socket.write('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-
-  const upstreamPath = `/api/ws?src=${encodeURIComponent(stream)}`;
+  const streamName = reqUrl.searchParams.get('src') || GO2RTC_STREAM;
+  const targetPath = `/api/ws?src=${encodeURIComponent(streamName)}`;
 
   const go2rtcHost = go2rtcBase.hostname;
-  const go2rtcPort = parseInt(go2rtcBase.port, 10) || (go2rtcBase.protocol === 'https:' ? 443 : 80);
-  const upstreamHost = `${go2rtcHost}:${go2rtcPort}`;
+  const go2rtcPort = parseInt(go2rtcBase.port, 10) || 1984;
 
   const proxySocket = net.connect(go2rtcPort, go2rtcHost, () => {
-    const upstreamHeaders = {
-      ...req.headers,
-      host: upstreamHost,
-    };
-
-    const lines = [`GET ${upstreamPath} HTTP/1.1`];
-    for (const [name, value] of Object.entries(upstreamHeaders)) {
-      if (typeof value === 'undefined') continue;
-      if (Array.isArray(value)) {
-        for (const item of value) lines.push(`${name}: ${item}`);
-      } else {
-        lines.push(`${name}: ${value}`);
-      }
+    const lines = [
+      `GET ${targetPath} HTTP/1.1`,
+      `Host: ${go2rtcBase.host}`,
+      'Upgrade: websocket',
+      'Connection: Upgrade',
+    ];
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (['host', 'upgrade', 'connection'].includes(k.toLowerCase())) continue;
+      lines.push(`${k}: ${v}`);
     }
     lines.push('', '');
     proxySocket.write(lines.join('\r\n'));
