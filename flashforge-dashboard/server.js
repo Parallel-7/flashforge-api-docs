@@ -557,7 +557,10 @@ app.post('/api/upload', requireConfig, upload.single('gcodeFile'), async (req, r
  */
 app.get('/api/camera/stream', requireConfig, (req, res) => {
   if (!CAMERA_ENTITY) {
-    return res.status(503).json({ error: 'No camera entity configured' });
+    return res.status(503).json({ error: 'Camera entity not configured. Please set camera_entity in add-on configuration.' });
+  }
+  if (!SUPERVISOR_TOKEN) {
+    return res.status(503).json({ error: 'SUPERVISOR_TOKEN not available. Ensure the add-on is running inside Home Assistant.' });
   }
 
   const options = {

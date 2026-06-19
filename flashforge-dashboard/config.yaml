@@ -36,7 +36,7 @@ options:
   mqtt_username: ""
   mqtt_password: ""
   mqtt_base_topic: "flashforge"
-  camera_entity: ""
+  camera_entity: ""  # ID entità camera di Home Assistant, es. camera.stampante
 
 schema:
   printer_ip: str
