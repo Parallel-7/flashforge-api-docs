@@ -580,24 +580,18 @@ const GO2RTC_CLIENT_CANDIDATE_PATHS = ['/api/go2rtc/client.js', '/video-rtc.js']
  * GET /api/go2rtc/client.js
  * Proxies the go2rtc client JS so the browser can load it from the same origin.
  */
-
-/**
- * GET /api/go2rtc/mjpeg
- * Bulletproof HTTP proxy for MJPEG stream. Bypasses all WebSocket/WebRTC ingress issues.
- */
 app.get('/api/go2rtc/mjpeg', async (req, res) => {
   const streamName = req.query.src || GO2RTC_STREAM;
   if (!GO2RTC_URL) return res.status(503).send('go2rtc_url not configured');
   
   const targetUrl = `${GO2RTC_URL}/api/stream.mjpeg?src=${encodeURIComponent(streamName)}`;
   try {
-    const upstream = await fetch(targetUrl, {
-      headers: { Host: GO2RTC_UPSTREAM_HOST_HEADER },
-    });
+    const upstream = await fetch(targetUrl); // Removed custom Host header, let node-fetch handle it
     if (!upstream.ok) return res.status(upstream.status).send('Upstream stream not found');
     
-    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'multipart/x-mixed-replace; boundary=--myboundary');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Connection', 'close');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     
