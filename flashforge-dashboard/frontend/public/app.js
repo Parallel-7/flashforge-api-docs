@@ -222,8 +222,6 @@ btnCameraOff.addEventListener('click', async () => {
   } catch (_) { }
   setTimeout(() => { btnCameraOff.disabled = false; }, 1000);
 });
-  } catch (_) { /* ignore */ }
-});
 
 /* ── Print controls ──────────────────────────────────────────────────────── */
 async function sendControl(action) {
