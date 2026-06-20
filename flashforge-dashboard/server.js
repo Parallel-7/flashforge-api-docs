@@ -571,69 +571,36 @@ let cachedVideoRtcJs = null;
 let cachedVideoRtcJsAt = 0;
 const VIDEO_RTC_CACHE_TTL_MS = 3600000; // 1 hour
 
-/**
- * go2rtc embedded in Frigate exposes its APIs under /api/go2rtc/:
- *
- *   MJPEG stream  →  GET <frigate_url>/api/go2rtc/api/stream.mjpeg?src=<name>
- *   WebSocket     →  WS  <frigate_url>/api/go2rtc/api/ws?src=<name>
- *   client.js     →  GET <frigate_url>/api/go2rtc/api/go2rtc/client.js
- *                 or  GET <frigate_url>/api/go2rtc/video-rtc.js  (older Frigate)
- *
- * GO2RTC_URL should therefore be set to the Frigate base URL, e.g.:
- *   http://ccab4aaf-frigate:5000
- * The /api/go2rtc prefix is appended here automatically.
- *
- * If you ever switch to a standalone go2rtc instance (no Frigate), set
- *   go2rtc_url: "http://<host>:1984"
- * and the GO2RTC_API_PREFIX env var to "" (empty string) so no prefix is added.
- */
-const GO2RTC_API_PREFIX = (process.env.GO2RTC_API_PREFIX !== undefined)
-  ? process.env.GO2RTC_API_PREFIX   // explicit override (e.g. '' for standalone)
-  : '/api/go2rtc';                   // default: Frigate embedded
-
-// Candidate paths for the go2rtc browser client script (tried in order).
+// go2rtc client script candidate paths (tried in order).
 const GO2RTC_CLIENT_CANDIDATE_PATHS = [
-  `${GO2RTC_API_PREFIX}/api/go2rtc/client.js`,  // Frigate embedded (recent)
-  `${GO2RTC_API_PREFIX}/video-rtc.js`,           // Frigate embedded (older)
-  '/api/go2rtc/client.js',                       // go2rtc standalone
-  '/video-rtc.js',                               // go2rtc standalone (older)
+  '/api/go2rtc/client.js',  // go2rtc >= 1.9
+  '/video-rtc.js',          // go2rtc older versions
 ];
 
 /**
- * Parses GO2RTC_URL into host + port + basePath components so we can use
- * Node's http.request() instead of fetch().  fetch() buffers the response
- * body and is therefore unusable for an infinite MJPEG multipart stream.
+ * Parses GO2RTC_URL into { host, port } for use with http.request().
+ * GO2RTC_URL must point directly to go2rtc port 1984, e.g.:
+ *   http://ccab4aaf-frigate:1984
  */
 function parseGo2rtcUrl() {
   try {
     const u = new URL(GO2RTC_URL);
-    return {
-      host: u.hostname,
-      port: Number(u.port) || (u.protocol === 'https:' ? 443 : 80),
-      // Strip trailing slash; path segments are appended explicitly below.
-      basePath: u.pathname.replace(/\/$/, ''),
-    };
+    return { host: u.hostname, port: Number(u.port) || 1984 };
   } catch (_) {
-    return { host: 'ccab4aaf-frigate', port: 1984, basePath: '' };
+    return { host: 'ccab4aaf-frigate', port: 1984 };
   }
 }
 
 /**
  * GET /api/go2rtc/mjpeg?src=<streamName>
- *
- * Proxy the MJPEG multipart stream from Frigate/go2rtc to the browser.
- * We use http.request() with an immediate pipe so every JPEG frame is
- * forwarded as soon as it arrives — fetch() would buffer the whole body
- * and never flush it, breaking live video.
+ * Proxy the MJPEG stream from go2rtc to the browser via http.request() + pipe.
  */
 app.get('/api/go2rtc/mjpeg', (req, res) => {
   const streamName = req.query.src || GO2RTC_STREAM;
   if (!GO2RTC_URL) return res.status(503).send('go2rtc_url not configured');
 
-  const { host, port, basePath } = parseGo2rtcUrl();
-  // e.g. /api/go2rtc/api/stream.mjpeg?src=Stampante  (Frigate embedded)
-  const upstreamPath = `${basePath}${GO2RTC_API_PREFIX}/api/stream.mjpeg?src=${encodeURIComponent(streamName)}`;
-
+  const { host, port } = parseGo2rtcUrl();
+  const upstreamPath = `/api/stream.mjpeg?src=${encodeURIComponent(streamName)}`;
   console.log(`[go2rtc] MJPEG upstream: http://${host}:${port}${upstreamPath}`);
 
   const proxyReq = http.request(
@@ -797,9 +764,9 @@ server.on('upgrade', (req, socket, head) => {
 
   // Resolve host/port from GO2RTC_URL at runtime so we honour whatever the
   // user configured (go2rtc standalone, Frigate built-in, custom port…).
-  const { host: wsHost, port: wsPort, basePath: wsBase } = parseGo2rtcUrl();
+  const { host: wsHost, port: wsPort } = parseGo2rtcUrl();
   // e.g. /api/go2rtc/api/ws?src=Stampante  (Frigate embedded)
-  const targetPath = `${wsBase}${GO2RTC_API_PREFIX}/api/ws?src=${encodeURIComponent(streamName)}`;
+  const targetPath = `/api/ws?src=${encodeURIComponent(streamName)}`;
   const wsHostHeader = `${wsHost}:${wsPort}`;
   console.log(`[go2rtc] WS upstream: ws://${wsHost}:${wsPort}${targetPath}`);
 
