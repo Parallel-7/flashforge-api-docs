@@ -414,16 +414,22 @@ function basicAuth(req, res, next) {
   if (!AUTH_ENABLED) return next();
   const authHeader = req.headers['authorization'] || '';
   if (!authHeader.startsWith('Basic ')) {
-    res.setHeader('WWW-Authenticate', 'Basic realm="FlashForge Dashboard"');
-    return res.status(401).send('Unauthorized');
+    res.writeHead(401, {
+      'WWW-Authenticate': 'Basic realm="FlashForge Dashboard"',
+      'Content-Type': 'text/plain',
+    });
+    return res.end('Unauthorized');
   }
   const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
   const colonIdx = decoded.indexOf(':');
   const user = colonIdx === -1 ? decoded : decoded.slice(0, colonIdx);
   const pass = colonIdx === -1 ? '' : decoded.slice(colonIdx + 1);
   if (user !== AUTH_USERNAME || pass !== AUTH_PASSWORD) {
-    res.setHeader('WWW-Authenticate', 'Basic realm="FlashForge Dashboard"');
-    return res.status(401).send('Unauthorized');
+    res.writeHead(401, {
+      'WWW-Authenticate': 'Basic realm="FlashForge Dashboard"',
+      'Content-Type': 'text/plain',
+    });
+    return res.end('Unauthorized');
   }
   next();
 }
