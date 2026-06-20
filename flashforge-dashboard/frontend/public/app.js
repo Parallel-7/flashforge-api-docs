@@ -200,18 +200,12 @@ function disableCamera() {
 
 btnCameraOn.addEventListener('click', async () => {
   if (!GO2RTC_STREAM) return;
-  try {
-    await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'open' }) });
-  } catch (_) { /* ignore – try to show stream anyway */ }
   initCamera();
 });
 
 btnCameraOff.addEventListener('click', async () => {
   disableCamera();
-  try {
-    await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'close' }) });
-  } catch (_) { /* ignore */ }
-});
+}
 
 /* ── Print controls ──────────────────────────────────────────────────────── */
 async function sendControl(action) {
