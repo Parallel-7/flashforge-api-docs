@@ -187,7 +187,7 @@ function initCamera() {
 
   const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   // Usiamo il percorso compatibile con il proxy definito in server.js
-  const wsUrl = `${wsProto}//${window.location.host}${BASE}/api/go2rtc/ws?src=${encodeURIComponent(streamName)}`;
+  const wsUrl = `${wsProto}//${window.location.host}${BASE}/api/go2rtc/ws?src=${encodeURIComponent(streamName)}&mode=mse`;
   
   console.log(`[Camera] Requesting stream at: ${wsUrl}`);
   cameraRtc.setAttribute('src', wsUrl);
