@@ -571,34 +571,109 @@ let cachedVideoRtcJs = null;
 let cachedVideoRtcJsAt = 0;
 const VIDEO_RTC_CACHE_TTL_MS = 3600000; // 1 hour
 
-const GO2RTC_UPSTREAM_HOST = 'ccab4aaf-frigate';
-const GO2RTC_UPSTREAM_PORT = 1984;
-const GO2RTC_UPSTREAM_HOST_HEADER = `${GO2RTC_UPSTREAM_HOST}:${GO2RTC_UPSTREAM_PORT}`;
-const GO2RTC_CLIENT_CANDIDATE_PATHS = ['/api/go2rtc/client.js', '/video-rtc.js'];
+/**
+ * go2rtc embedded in Frigate exposes its APIs under /api/go2rtc/:
+ *
+ *   MJPEG stream  →  GET <frigate_url>/api/go2rtc/api/stream.mjpeg?src=<name>
+ *   WebSocket     →  WS  <frigate_url>/api/go2rtc/api/ws?src=<name>
+ *   client.js     →  GET <frigate_url>/api/go2rtc/api/go2rtc/client.js
+ *                 or  GET <frigate_url>/api/go2rtc/video-rtc.js  (older Frigate)
+ *
+ * GO2RTC_URL should therefore be set to the Frigate base URL, e.g.:
+ *   http://ccab4aaf-frigate:5000
+ * The /api/go2rtc prefix is appended here automatically.
+ *
+ * If you ever switch to a standalone go2rtc instance (no Frigate), set
+ *   go2rtc_url: "http://<host>:1984"
+ * and the GO2RTC_API_PREFIX env var to "" (empty string) so no prefix is added.
+ */
+const GO2RTC_API_PREFIX = (process.env.GO2RTC_API_PREFIX !== undefined)
+  ? process.env.GO2RTC_API_PREFIX   // explicit override (e.g. '' for standalone)
+  : '/api/go2rtc';                   // default: Frigate embedded
+
+// Candidate paths for the go2rtc browser client script (tried in order).
+const GO2RTC_CLIENT_CANDIDATE_PATHS = [
+  `${GO2RTC_API_PREFIX}/api/go2rtc/client.js`,  // Frigate embedded (recent)
+  `${GO2RTC_API_PREFIX}/video-rtc.js`,           // Frigate embedded (older)
+  '/api/go2rtc/client.js',                       // go2rtc standalone
+  '/video-rtc.js',                               // go2rtc standalone (older)
+];
 
 /**
- * GET /api/go2rtc/client.js
- * Proxies the go2rtc client JS so the browser can load it from the same origin.
+ * Parses GO2RTC_URL into host + port + basePath components so we can use
+ * Node's http.request() instead of fetch().  fetch() buffers the response
+ * body and is therefore unusable for an infinite MJPEG multipart stream.
  */
-app.get('/api/go2rtc/mjpeg', async (req, res) => {
+function parseGo2rtcUrl() {
+  try {
+    const u = new URL(GO2RTC_URL);
+    return {
+      host: u.hostname,
+      port: Number(u.port) || (u.protocol === 'https:' ? 443 : 80),
+      // Strip trailing slash; path segments are appended explicitly below.
+      basePath: u.pathname.replace(/\/$/, ''),
+    };
+  } catch (_) {
+    return { host: 'ccab4aaf-frigate', port: 1984, basePath: '' };
+  }
+}
+
+/**
+ * GET /api/go2rtc/mjpeg?src=<streamName>
+ *
+ * Proxy the MJPEG multipart stream from Frigate/go2rtc to the browser.
+ * We use http.request() with an immediate pipe so every JPEG frame is
+ * forwarded as soon as it arrives — fetch() would buffer the whole body
+ * and never flush it, breaking live video.
+ */
+app.get('/api/go2rtc/mjpeg', (req, res) => {
   const streamName = req.query.src || GO2RTC_STREAM;
   if (!GO2RTC_URL) return res.status(503).send('go2rtc_url not configured');
-  
-  const targetUrl = `${GO2RTC_URL}/api/stream.mjpeg?src=${encodeURIComponent(streamName)}`;
-  try {
-    const upstream = await fetch(targetUrl); // Removed custom Host header, let node-fetch handle it
-    if (!upstream.ok) return res.status(upstream.status).send('Upstream stream not found');
-    
-    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'multipart/x-mixed-replace; boundary=--myboundary');
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Connection', 'close');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    
-    upstream.body.pipe(res);
-  } catch (err) {
-    res.status(502).send(err.message);
-  }
+
+  const { host, port, basePath } = parseGo2rtcUrl();
+  // e.g. /api/go2rtc/api/stream.mjpeg?src=Stampante  (Frigate embedded)
+  const upstreamPath = `${basePath}${GO2RTC_API_PREFIX}/api/stream.mjpeg?src=${encodeURIComponent(streamName)}`;
+
+  console.log(`[go2rtc] MJPEG upstream: http://${host}:${port}${upstreamPath}`);
+
+  const proxyReq = http.request(
+    { host, port, path: upstreamPath, method: 'GET' },
+    (proxyRes) => {
+      if (proxyRes.statusCode !== 200) {
+        res.status(proxyRes.statusCode || 502).send('Upstream stream not found');
+        proxyRes.resume(); // drain so the socket is released
+        return;
+      }
+
+      // Forward Content-Type exactly as go2rtc sends it (includes boundary).
+      res.setHeader(
+        'Content-Type',
+        proxyRes.headers['content-type'] || 'multipart/x-mixed-replace; boundary=ffboundary',
+      );
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders(); // send headers immediately, before any body data
+
+      // Pipe every chunk straight to the browser without buffering.
+      proxyRes.pipe(res, { end: true });
+
+      // If the browser disconnects, tear down the upstream request too.
+      req.on('close', () => proxyReq.destroy());
+    },
+  );
+
+  proxyReq.on('error', (err) => {
+    console.warn(`[go2rtc] MJPEG proxy error: ${err.message}`);
+    if (!res.headersSent) {
+      res.status(502).send(err.message);
+    } else {
+      res.end();
+    }
+  });
+
+  proxyReq.end();
 });
 
 app.get('/api/go2rtc/client.js', async (req, res) => {
@@ -615,9 +690,9 @@ app.get('/api/go2rtc/client.js', async (req, res) => {
 
   try {
     for (const candidatePath of GO2RTC_CLIENT_CANDIDATE_PATHS) {
-      const upstream = await fetch(`${GO2RTC_URL}${candidatePath}`, {
-        headers: { Host: GO2RTC_UPSTREAM_HOST_HEADER },
-      });
+      const url = `${GO2RTC_URL}${candidatePath}`;
+      console.log(`[go2rtc] Trying client.js at: ${url}`);
+      const upstream = await fetch(url);
       if (!upstream.ok) continue;
 
       cachedVideoRtcJs = await upstream.text();
@@ -713,7 +788,6 @@ server.on('upgrade', (req, socket, head) => {
   }
 
   const streamName = urlObj.searchParams.get('src') || GO2RTC_STREAM;
-  const targetPath = `/api/ws?src=${encodeURIComponent(streamName)}`;
   const wsKey = req.headers['sec-websocket-key'];
   if (!wsKey) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
@@ -721,7 +795,15 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
-  const proxySocket = net.connect(GO2RTC_UPSTREAM_PORT, GO2RTC_UPSTREAM_HOST, () => {
+  // Resolve host/port from GO2RTC_URL at runtime so we honour whatever the
+  // user configured (go2rtc standalone, Frigate built-in, custom port…).
+  const { host: wsHost, port: wsPort, basePath: wsBase } = parseGo2rtcUrl();
+  // e.g. /api/go2rtc/api/ws?src=Stampante  (Frigate embedded)
+  const targetPath = `${wsBase}${GO2RTC_API_PREFIX}/api/ws?src=${encodeURIComponent(streamName)}`;
+  const wsHostHeader = `${wsHost}:${wsPort}`;
+  console.log(`[go2rtc] WS upstream: ws://${wsHost}:${wsPort}${targetPath}`);
+
+  const proxySocket = net.connect(wsPort, wsHost, () => {
     const wsVersion = req.headers['sec-websocket-version'] || '13';
     const wsProtocol = req.headers['sec-websocket-protocol'];
     const wsExtensions = req.headers['sec-websocket-extensions'];
@@ -730,7 +812,7 @@ server.on('upgrade', (req, socket, head) => {
 
     const lines = [
       `GET ${targetPath} HTTP/1.1`,
-      `Host: ${GO2RTC_UPSTREAM_HOST_HEADER}`,
+      `Host: ${wsHostHeader}`,
       'Upgrade: websocket',
       'Connection: Upgrade',
       `Sec-WebSocket-Key: ${wsKey}`,

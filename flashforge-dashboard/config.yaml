@@ -36,8 +36,9 @@ options:
   mqtt_username: ""
   mqtt_password: ""
   mqtt_base_topic: "flashforge"
-  go2rtc_url: "http://a89bd424_go2rtc:1984"  # URL interno dell'add-on go2rtc/Frigate
-  go2rtc_stream: "Stampante"  # Nome dello stream in go2rtc
+  go2rtc_url: "http://ccab4aaf-frigate:1984"  # URL base di go2rtc (porta 1984 anche se embedded in Frigate)
+  go2rtc_stream: "Stampante"                   # Nome dello stream configurato in Frigate/go2rtc
+  go2rtc_api_prefix: "/api/go2rtc"             # Prefisso API go2rtc: "/api/go2rtc" se embedded in Frigate, "" se go2rtc standalone
 
 schema:
   printer_ip: str
@@ -51,5 +52,6 @@ schema:
   mqtt_base_topic: str
   go2rtc_url: str?
   go2rtc_stream: str?
+  go2rtc_api_prefix: str?
 
 url: "https://github.com/MikManenti/flashforge-api-docs"
