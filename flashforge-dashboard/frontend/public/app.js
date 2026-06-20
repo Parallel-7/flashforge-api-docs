@@ -205,7 +205,7 @@ btnCameraOn.addEventListener('click', async () => {
 
 btnCameraOff.addEventListener('click', async () => {
   disableCamera();
-}
+});
 
 /* ── Print controls ──────────────────────────────────────────────────────── */
 async function sendControl(action) {
