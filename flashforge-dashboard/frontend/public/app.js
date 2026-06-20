@@ -182,45 +182,45 @@ function updateUI(d) {
 function initCamera() {
   const streamName = window.GO2RTC_STREAM || 'Stampante';
   cameraPlaceholder.classList.add('hidden');
-  cameraImg.classList.remove('active');
-  cameraRtc.classList.add('active');
-
-  const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  // Usiamo il percorso compatibile con il proxy definito in server.js
-  const wsUrl = `${wsProto}//${window.location.host}${BASE}/api/go2rtc/ws?src=${encodeURIComponent(streamName)}&mode=mse`;
   
-  console.log(`[Camera] Requesting stream at: ${wsUrl}`);
-  cameraRtc.setAttribute('src', wsUrl);
+  // Disabilita il player WebRTC
+  if (cameraRtc) {
+    cameraRtc.classList.remove('active');
+    cameraRtc.removeAttribute('src');
+  }
+
+  // Usa l'immagine con flusso MJPEG tramite il proxy HTTP (infallibile sotto Ingress)
+  cameraImg.classList.add('active');
+  const mjpegUrl = `${BASE}/api/go2rtc/mjpeg?src=${encodeURIComponent(streamName)}&t=${Date.now()}`;
+  console.log(`[Camera] Requesting MJPEG stream at: ${mjpegUrl}`);
+  cameraImg.src = mjpegUrl;
 }
 
 function disableCamera() {
-  cameraRtc.removeAttribute('src');
-  cameraRtc.classList.remove('active');
-  cameraImg.src = '';
-  cameraImg.classList.remove('active');
+  if (cameraRtc) {
+    cameraRtc.removeAttribute('src');
+    cameraRtc.classList.remove('active');
+  }
+  if (cameraImg) {
+    cameraImg.src = '';
+    cameraImg.classList.remove('active');
+  }
   cameraPlaceholder.classList.remove('hidden');
 }
 
 btnCameraOn.addEventListener('click', async () => {
-  btnCameraOn.disabled = true;
-  console.log('[Camera] Waking up camera via API...');
+  if (!GO2RTC_STREAM) return;
   try {
     await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'open' }) });
-  } catch (err) {
-    console.warn('[Camera] Wake API error, trying stream anyway', err);
-  }
-  
+  } catch (_) { /* ignore – try to show stream anyway */ }
   initCamera();
-  setTimeout(() => { btnCameraOn.disabled = false; }, 1000);
 });
 
 btnCameraOff.addEventListener('click', async () => {
-  btnCameraOff.disabled = true;
   disableCamera();
   try {
     await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'close' }) });
-  } catch (_) { }
-  setTimeout(() => { btnCameraOff.disabled = false; }, 1000);
+  } catch (_) { /* ignore */ }
 });
 
 /* ── Print controls ──────────────────────────────────────────────────────── */
