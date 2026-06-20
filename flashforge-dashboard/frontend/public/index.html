@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="style.css" />
   <!-- go2rtc video-stream custom element; loaded via relative path so it
        resolves correctly both in standalone mode and under HA Ingress. -->
-  <script src="api/go2rtc/client.js" defer></script>
 </head>
 <body>
   <header>
@@ -16,14 +15,11 @@
       <div id="status-badge" class="badge badge--idle">—</div>
     </div>
   </header>
-
   <main>
-
     <!-- ── Camera ──────────────────────────────────────────── -->
     <section class="card card--camera">
       <h2>Camera</h2>
       <div class="camera-wrap">
-        <video-stream id="camera-rtc"></video-stream>
         <img id="camera-img" src="" alt="Camera stream" />
         <div id="camera-placeholder" class="camera-placeholder">
           <span>Camera non disponibile</span>
@@ -33,17 +29,13 @@
         <button id="btn-camera-on" class="btn btn--secondary">▶ Attiva camera</button>
         <button id="btn-camera-off" class="btn btn--secondary">⏹ Spegni camera</button>
       </div>
-
     </section>
-
     <!-- ── Stato stampa ────────────────────────────────────── -->
     <section class="card card--status">
       <h2>Stato stampa</h2>
-
       <div class="progress-bar-wrap">
         <div class="progress-bar" id="progress-bar"></div>
       </div>
-
       <div class="pairs-grid">
         <div class="stat stat--full">
           <span class="stat-label">File</span>
@@ -83,7 +75,6 @@
       </div>
       <div id="ctrl-message" class="ctrl-message"></div>
     </section>
-
     <!-- ── File in memoria ─────────────────────────────────── -->
     <section class="card card--files">
       <h2>File in memoria</h2>
@@ -93,7 +84,6 @@
       <div id="file-list" class="file-list">
         <p class="hint">Premi "Aggiorna lista" per caricare i file.</p>
       </div>
-
       <!-- Modal conferma stampa da memoria -->
       <div id="print-modal" class="modal hidden">
         <div class="modal-box">
@@ -109,7 +99,6 @@
         </div>
       </div>
     </section>
-
     <!-- ── Upload GCode ────────────────────────────────────── -->
     <section class="card card--upload">
       <h2>Carica GCode</h2>
@@ -136,14 +125,11 @@
       </div>
       <div id="upload-message" class="ctrl-message"></div>
     </section>
-
   </main>
-
   <footer>
     <span id="last-update">Non ancora aggiornato</span>
     <span>dati aggiornati ogni 4s • camera manuale</span>
   </footer>
-
   <script src="app.js"></script>
 </body>
 </html>

@@ -21,7 +21,6 @@ let pollingTimer = null;
 
 /* ── DOM refs ────────────────────────────────────────────────────────────── */
 const badge          = document.getElementById('status-badge');
-const cameraRtc      = document.getElementById('camera-rtc');
 const cameraImg      = document.getElementById('camera-img');
 const cameraPlaceholder = document.getElementById('camera-placeholder');
 const btnCameraOn    = document.getElementById('btn-camera-on');
@@ -183,24 +182,15 @@ function initCamera() {
   const streamName = window.GO2RTC_STREAM || 'Stampante';
   cameraPlaceholder.classList.add('hidden');
   
-  // Disabilita il player WebRTC
-  if (cameraRtc) {
-    cameraRtc.classList.remove('active');
-    cameraRtc.removeAttribute('src');
+  if (cameraImg) {
+    cameraImg.classList.add('active');
+    const mjpegUrl = `${BASE}/api/go2rtc/mjpeg?src=${encodeURIComponent(streamName)}&t=${Date.now()}`;
+    console.log(`[Camera] Requesting MJPEG stream at: ${mjpegUrl}`);
+    cameraImg.src = mjpegUrl;
   }
-
-  // Usa l'immagine con flusso MJPEG tramite il proxy HTTP (infallibile sotto Ingress)
-  cameraImg.classList.add('active');
-  const mjpegUrl = `${BASE}/api/go2rtc/mjpeg?src=${encodeURIComponent(streamName)}&t=${Date.now()}`;
-  console.log(`[Camera] Requesting MJPEG stream at: ${mjpegUrl}`);
-  cameraImg.src = mjpegUrl;
 }
 
 function disableCamera() {
-  if (cameraRtc) {
-    cameraRtc.removeAttribute('src');
-    cameraRtc.classList.remove('active');
-  }
   if (cameraImg) {
     cameraImg.src = '';
     cameraImg.classList.remove('active');
