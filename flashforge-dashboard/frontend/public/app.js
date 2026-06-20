@@ -14,19 +14,6 @@ const BASE = (window.INGRESS_PATH || detectedIngress || '').replace(/\/$/, '');
 /** Stream name injected by server.js when go2rtc is configured, otherwise null. */
 const GO2RTC_STREAM = window.GO2RTC_STREAM || null;
 
-
-/* ── Caricamento dinamico go2rtc per WebView Smartphone ──────────── */
-function initGo2RTC() {
-  const script = document.createElement('script');
-  script.src = `${BASE}/api/go2rtc/client.js`;
-  script.defer = true;
-  script.onload = () => console.log('✅ go2rtc client.js caricato con successo via BASE dinamico.');
-  script.onerror = () => console.error('❌ Errore nel caricamento di client.js.');
-  document.head.appendChild(script);
-}
-initGo2RTC();
-
-
 /* ── State ───────────────────────────────────────────────────────────────── */
 let currentJobID = null;
 let currentStatus = null;
@@ -193,26 +180,21 @@ function updateUI(d) {
  * attribute and processes it once the element is upgraded.
  */
 function initCamera() {
-  if (!GO2RTC_STREAM) {
-    console.log('Camera component skipped: GO2RTC_STREAM is not configured');
-    cameraPlaceholder.classList.remove('hidden');
-    cameraRtc.classList.remove('active');
-    cameraImg.classList.remove('active');
-    return;
-  }
-
+  const streamName = window.GO2RTC_STREAM || 'Stampante';
   cameraPlaceholder.classList.add('hidden');
   cameraImg.classList.remove('active');
   cameraRtc.classList.add('active');
 
   const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${wsProto}//${window.location.host}${BASE}/api/go2rtc/ws?src=${encodeURIComponent(GO2RTC_STREAM)}`;
-  console.log(`Initializing video-stream target: ${wsUrl}`);
+  // Usiamo il percorso compatibile con il proxy definito in server.js
+  const wsUrl = `${wsProto}//${window.location.host}${BASE}/api/go2rtc/ws?src=${encodeURIComponent(streamName)}`;
+  
+  console.log(`[Camera] Requesting stream at: ${wsUrl}`);
   cameraRtc.setAttribute('src', wsUrl);
 }
 
 function disableCamera() {
-  if (cameraRtc.src) cameraRtc.src = '';
+  cameraRtc.removeAttribute('src');
   cameraRtc.classList.remove('active');
   cameraImg.src = '';
   cameraImg.classList.remove('active');
@@ -220,17 +202,26 @@ function disableCamera() {
 }
 
 btnCameraOn.addEventListener('click', async () => {
-  if (!GO2RTC_STREAM) return;
+  btnCameraOn.disabled = true;
+  console.log('[Camera] Waking up camera via API...');
   try {
     await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'open' }) });
-  } catch (_) { /* ignore – try to show stream anyway */ }
+  } catch (err) {
+    console.warn('[Camera] Wake API error, trying stream anyway', err);
+  }
+  
   initCamera();
+  setTimeout(() => { btnCameraOn.disabled = false; }, 1000);
 });
 
 btnCameraOff.addEventListener('click', async () => {
+  btnCameraOff.disabled = true;
   disableCamera();
   try {
     await fetch(`${BASE}/api/camera`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'close' }) });
+  } catch (_) { }
+  setTimeout(() => { btnCameraOff.disabled = false; }, 1000);
+});
   } catch (_) { /* ignore */ }
 });
 
