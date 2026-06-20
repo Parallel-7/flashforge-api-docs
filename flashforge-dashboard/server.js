@@ -621,6 +621,8 @@ app.get('/api/go2rtc/mjpeg', (req, res) => {
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
       res.setHeader('Connection', 'keep-alive');
+      // Tell nginx (used by HA Ingress) not to buffer this streaming response.
+      res.setHeader('X-Accel-Buffering', 'no');
       res.flushHeaders(); // send headers immediately, before any body data
 
       // Pipe every chunk straight to the browser without buffering.
