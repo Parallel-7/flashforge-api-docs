@@ -14,6 +14,19 @@ const BASE = (window.INGRESS_PATH || detectedIngress || '').replace(/\/$/, '');
 /** Stream name injected by server.js when go2rtc is configured, otherwise null. */
 const GO2RTC_STREAM = window.GO2RTC_STREAM || null;
 
+
+/* ── Caricamento dinamico go2rtc per WebView Smartphone ──────────── */
+function initGo2RTC() {
+  const script = document.createElement('script');
+  script.src = `${BASE}/api/go2rtc/client.js`;
+  script.defer = true;
+  script.onload = () => console.log('✅ go2rtc client.js caricato con successo via BASE dinamico.');
+  script.onerror = () => console.error('❌ Errore nel caricamento di client.js.');
+  document.head.appendChild(script);
+}
+initGo2RTC();
+
+
 /* ── State ───────────────────────────────────────────────────────────────── */
 let currentJobID = null;
 let currentStatus = null;
