@@ -580,6 +580,33 @@ const GO2RTC_CLIENT_CANDIDATE_PATHS = ['/api/go2rtc/client.js', '/video-rtc.js']
  * GET /api/go2rtc/client.js
  * Proxies the go2rtc client JS so the browser can load it from the same origin.
  */
+
+/**
+ * GET /api/go2rtc/mjpeg
+ * Bulletproof HTTP proxy for MJPEG stream. Bypasses all WebSocket/WebRTC ingress issues.
+ */
+app.get('/api/go2rtc/mjpeg', async (req, res) => {
+  const streamName = req.query.src || GO2RTC_STREAM;
+  if (!GO2RTC_URL) return res.status(503).send('go2rtc_url not configured');
+  
+  const targetUrl = `${GO2RTC_URL}/api/stream.mjpeg?src=${encodeURIComponent(streamName)}`;
+  try {
+    const upstream = await fetch(targetUrl, {
+      headers: { Host: GO2RTC_UPSTREAM_HOST_HEADER },
+    });
+    if (!upstream.ok) return res.status(upstream.status).send('Upstream stream not found');
+    
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    upstream.body.pipe(res);
+  } catch (err) {
+    res.status(502).send(err.message);
+  }
+});
+
 app.get('/api/go2rtc/client.js', async (req, res) => {
   if (!GO2RTC_URL) {
     return res.status(503).send('// go2rtc_url not configured\n');
@@ -692,9 +719,7 @@ server.on('upgrade', (req, socket, head) => {
   }
 
   const streamName = urlObj.searchParams.get('src') || GO2RTC_STREAM;
-  urlObj.searchParams.set('src', streamName);
-  // Forward all query parameters (including mode=mse) to go2rtc
-  const targetPath = `/api/ws${urlObj.search}`;
+  const targetPath = `/api/ws?src=${encodeURIComponent(streamName)}`;
   const wsKey = req.headers['sec-websocket-key'];
   if (!wsKey) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
