@@ -14,16 +14,18 @@ arch:
   - armv7
   - armhf
 
-# Ingress: accessibile dalla sidebar di HA senza aprire porte extra
+# Ingress: accessibile dalla sidebar di HA senza aprire porte extra.
+# NOTA: ingress_port è ora 8100 (porta interna senza auth).
+#       La porta 8099 è esposta all'esterno e richiede autenticazione.
 ingress: true
-ingress_port: 8099
+ingress_port: 8100
 panel_icon: mdi:printer-3d
 panel_title: FlashForge
 webui: "http://[HOST]:[PORT:8099]"
 ports:
   8099/tcp: 8099
 ports_description:
-  8099/tcp: Dashboard HTTP
+  8099/tcp: Dashboard HTTP (accesso diretto, con auth se configurata)
 
 # Opzioni configurabili dal pannello HA (Add-on → Configurazione)
 options:
@@ -38,6 +40,10 @@ options:
   mqtt_base_topic: "flashforge"
   go2rtc_url: "http://ccab4aaf-frigate:1984"  # URL base di go2rtc (porta 1984 anche se embedded in Frigate)
   go2rtc_stream: "Stampante"                   # Nome dello stream configurato in Frigate/go2rtc
+  # Credenziali per l'accesso diretto sulla porta 8099.
+  # Se lasciate vuote, la porta 8099 non richiede autenticazione.
+  auth_username: ""
+  auth_password: ""
 
 schema:
   printer_ip: str
@@ -51,5 +57,7 @@ schema:
   mqtt_base_topic: str
   go2rtc_url: str?
   go2rtc_stream: str?
+  auth_username: str?
+  auth_password: password?
 
 url: "https://github.com/MikManenti/flashforge-api-docs"

@@ -9,9 +9,12 @@ bashio::log.info "Starting FlashForge Dashboard..."
 export PRINTER_IP="$(bashio::config 'printer_ip')"
 export SERIAL_NUMBER="$(bashio::config 'serial_number')"
 export CHECK_CODE="$(bashio::config 'check_code')"
-export PORT="8099"
+export DIRECT_PORT="8099"
+export INGRESS_PORT="8100"
 export NODE_ENV="production"
 export INGRESS_PATH="$(bashio::addon.ingress_entry)"
+export AUTH_USERNAME="$(bashio::config 'auth_username')"
+export AUTH_PASSWORD="$(bashio::config 'auth_password')"
 export MQTT_ENABLED="$(bashio::config 'mqtt_enabled')"
 export MQTT_HOST="$(bashio::config 'mqtt_host')"
 export MQTT_PORT="$(bashio::config 'mqtt_port')"
@@ -33,7 +36,8 @@ if bashio::config.is_empty 'check_code'; then
 fi
 
 bashio::log.info "Printer IP: ${PRINTER_IP}"
-bashio::log.info "Listening on port ${PORT}"
+bashio::log.info "Direct access port: ${DIRECT_PORT} (auth enabled: $([ -n "${AUTH_USERNAME}" ] && echo 'yes' || echo 'no'))"
+bashio::log.info "Ingress port: ${INGRESS_PORT}"
 bashio::log.info "MQTT enabled: ${MQTT_ENABLED}"
 bashio::log.info "MQTT broker: ${MQTT_HOST}:${MQTT_PORT}"
 if [ -n "${GO2RTC_STREAM}" ]; then

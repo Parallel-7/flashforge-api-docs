@@ -12,7 +12,8 @@ const http = require('http');
 const net = require('net');
 
 const app = express();
-const PORT = process.env.PORT || 8099;
+const DIRECT_PORT = Number(process.env.DIRECT_PORT || 8099);
+const INGRESS_PORT = Number(process.env.INGRESS_PORT || 8100);
 const PRINTER_IP = process.env.PRINTER_IP;
 const SERIAL_NUMBER = process.env.SERIAL_NUMBER;
 const CHECK_CODE = process.env.CHECK_CODE;
@@ -35,6 +36,12 @@ const MQTT_USERNAME = process.env.MQTT_USERNAME || '';
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
 const MQTT_BASE_TOPIC = sanitizeTopic(process.env.MQTT_BASE_TOPIC || 'flashforge');
 const MQTT_POLL_INTERVAL_MS = 10000;
+
+// Credenziali per la Basic Auth sulla porta diretta (8099).
+// Se entrambe vuote, l'accesso diretto non richiede autenticazione.
+const AUTH_USERNAME = (process.env.AUTH_USERNAME || '').trim();
+const AUTH_PASSWORD = (process.env.AUTH_PASSWORD || '').trim();
+const AUTH_ENABLED = !!(AUTH_USERNAME && AUTH_PASSWORD);
 
 const DEVICE_ID = String(SERIAL_NUMBER || PRINTER_IP || 'flashforge_printer')
   .replace(/[^\w-]/g, '_')
@@ -399,6 +406,28 @@ function requireConfig(req, res, next) {
   next();
 }
 
+/**
+ * HTTP Basic Auth middleware – usato SOLO sul server ad accesso diretto (porta 8099).
+ * Confronto sicuro che regge password contenenti il carattere ':'.
+ */
+function basicAuth(req, res, next) {
+  if (!AUTH_ENABLED) return next();
+  const authHeader = req.headers['authorization'] || '';
+  if (!authHeader.startsWith('Basic ')) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="FlashForge Dashboard"');
+    return res.status(401).send('Unauthorized');
+  }
+  const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
+  const colonIdx = decoded.indexOf(':');
+  const user = colonIdx === -1 ? decoded : decoded.slice(0, colonIdx);
+  const pass = colonIdx === -1 ? '' : decoded.slice(colonIdx + 1);
+  if (user !== AUTH_USERNAME || pass !== AUTH_PASSWORD) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="FlashForge Dashboard"');
+    return res.status(401).send('Unauthorized');
+  }
+  next();
+}
+
 // ── API Routes ───────────────────────────────────────────────────────────────
 
 /**
@@ -718,24 +747,55 @@ function serveIndex(req, res) {
 app.get('*', serveIndex);
 
 // ── Start ────────────────────────────────────────────────────────────────────
-const server = http.createServer(app);
 
-server.listen(PORT, () => {
-  console.log(`FlashForge Dashboard (HA add-on) running on port ${PORT}`);
-  console.log(`Ingress path: ${INGRESS_PATH || '(none)'}`);
-  console.log(`Direct HTTP URL: http://<HOST_IP>:${PORT}`);
-  if (!PRINTER_IP || !SERIAL_NUMBER || !CHECK_CODE) {
-    console.warn('⚠  printer_ip, serial_number or check_code not set. Configure them in the HA add-on Configuration tab.');
-  }
-  setupMqtt();
-  if (MQTT_ENABLED) {
-    mqttPollingTimer = setInterval(() => {
-      refreshPrinterState();
-    }, MQTT_POLL_INTERVAL_MS);
+// ── Server 1: Ingress HA (nessuna auth – HA richiede già il login) ──────────
+// HA Supervisor proxia qui il traffico dalla sidebar. La porta NON è esposta
+// all'esterno (non è nella sezione `ports` di config.yaml).
+const ingressServer = http.createServer(app);
+
+// ── Server 2: Accesso diretto (Basic Auth quando le credenziali sono impostate)
+// Esposto sulla rete locale tramite la sezione `ports` di config.yaml.
+const directServer = http.createServer((req, res) => {
+  if (AUTH_ENABLED) {
+    basicAuth(req, res, () => app(req, res));
+  } else {
+    app(req, res);
   }
 });
 
-server.on('upgrade', (req, socket, head) => {
+// ── WebSocket upgrade (proxy go2rtc) ─────────────────────────────────────────
+/**
+ * Gestisce l'upgrade WebSocket per entrambi i server.
+ * @param {boolean} requireAuth  true solo per il server ad accesso diretto
+ */
+function handleWsUpgrade(req, socket, head, requireAuth) {
+  // Verifica Basic Auth per il server diretto
+  if (requireAuth && AUTH_ENABLED) {
+    const authHeader = req.headers['authorization'] || '';
+    if (!authHeader.startsWith('Basic ')) {
+      socket.write(
+        'HTTP/1.1 401 Unauthorized\r\n' +
+        'WWW-Authenticate: Basic realm="FlashForge Dashboard"\r\n' +
+        'Content-Length: 0\r\nConnection: close\r\n\r\n',
+      );
+      socket.destroy();
+      return;
+    }
+    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
+    const colonIdx = decoded.indexOf(':');
+    const user = colonIdx === -1 ? decoded : decoded.slice(0, colonIdx);
+    const pass = colonIdx === -1 ? '' : decoded.slice(colonIdx + 1);
+    if (user !== AUTH_USERNAME || pass !== AUTH_PASSWORD) {
+      socket.write(
+        'HTTP/1.1 401 Unauthorized\r\n' +
+        'WWW-Authenticate: Basic realm="FlashForge Dashboard"\r\n' +
+        'Content-Length: 0\r\nConnection: close\r\n\r\n',
+      );
+      socket.destroy();
+      return;
+    }
+  }
+
   let urlPath = req.url || '/';
   if (INGRESS_PATH && urlPath.startsWith(INGRESS_PATH)) {
     urlPath = urlPath.substring(INGRESS_PATH.length) || '/';
@@ -764,10 +824,7 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
-  // Resolve host/port from GO2RTC_URL at runtime so we honour whatever the
-  // user configured (go2rtc standalone, Frigate built-in, custom port…).
   const { host: wsHost, port: wsPort } = parseGo2rtcUrl();
-  // e.g. /api/go2rtc/api/ws?src=Stampante  (Frigate embedded)
   const targetPath = `/api/ws?src=${encodeURIComponent(streamName)}`;
   const wsHostHeader = `${wsHost}:${wsPort}`;
   console.log(`[go2rtc] WS upstream: ws://${wsHost}:${wsPort}${targetPath}`);
@@ -813,6 +870,33 @@ server.on('upgrade', (req, socket, head) => {
 
   socket.pipe(proxySocket);
   proxySocket.pipe(socket);
+}
+
+// Collega l'upgrade handler a entrambi i server
+ingressServer.on('upgrade', (req, socket, head) => handleWsUpgrade(req, socket, head, false));
+directServer.on('upgrade', (req, socket, head) => handleWsUpgrade(req, socket, head, true));
+
+// ── Listen ───────────────────────────────────────────────────────────────────
+
+// Server Ingress (porta interna, nessuna auth)
+ingressServer.listen(INGRESS_PORT, () => {
+  console.log(`FlashForge Dashboard – Ingress HA in ascolto sulla porta ${INGRESS_PORT} (nessuna auth)`);
+  console.log(`Ingress path: ${INGRESS_PATH || '(none)'}`);
+});
+
+// Server diretto (porta esposta, con auth se configurata)
+directServer.listen(DIRECT_PORT, () => {
+  console.log(`FlashForge Dashboard – Accesso diretto sulla porta ${DIRECT_PORT} (auth ${AUTH_ENABLED ? 'ATTIVA' : 'DISATTIVA'})`);
+  console.log(`Direct HTTP URL: http://<HOST_IP>:${DIRECT_PORT}`);
+  if (!PRINTER_IP || !SERIAL_NUMBER || !CHECK_CODE) {
+    console.warn('⚠  printer_ip, serial_number o check_code non impostati. Configurali nel pannello Add-on → Configurazione.');
+  }
+  setupMqtt();
+  if (MQTT_ENABLED) {
+    mqttPollingTimer = setInterval(() => {
+      refreshPrinterState();
+    }, MQTT_POLL_INTERVAL_MS);
+  }
 });
 
 function shutdown() {
@@ -828,7 +912,10 @@ function shutdown() {
       console.warn(`MQTT shutdown warning: ${err.message}`);
     }
   }
-  server.close(() => process.exit(0));
+  let closed = 0;
+  const onClosed = () => { if (++closed >= 2) process.exit(0); };
+  directServer.close(onClosed);
+  ingressServer.close(onClosed);
   setTimeout(() => process.exit(0), 3000).unref();
 }
 
