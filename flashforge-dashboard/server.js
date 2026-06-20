@@ -692,7 +692,9 @@ server.on('upgrade', (req, socket, head) => {
   }
 
   const streamName = urlObj.searchParams.get('src') || GO2RTC_STREAM;
-  const targetPath = `/api/ws?src=${encodeURIComponent(streamName)}`;
+  urlObj.searchParams.set('src', streamName);
+  // Forward all query parameters (including mode=mse) to go2rtc
+  const targetPath = `/api/ws${urlObj.search}`;
   const wsKey = req.headers['sec-websocket-key'];
   if (!wsKey) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
