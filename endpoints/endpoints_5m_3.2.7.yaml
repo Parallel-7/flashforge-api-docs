@@ -256,13 +256,13 @@ paths:
         required: true
         schema:
           type: string
-          description: String boolean, typically "0" or "1"
+          description: String boolean: "true" or "false" (lowercase)
       - in: header
         name: levelingBeforePrint
         required: true
         schema:
           type: string
-          description: String boolean, typically "0" or "1"
+          description: String boolean: "true" or "false" (lowercase)
       requestBody:
         required: true
         content:
@@ -422,6 +422,14 @@ components:
           type: integer
         pid:
           type: integer
+          enum: [35, 36]
+          description: |
+            Product ID (canonical model identifier). The firmware reports this value
+            in the /detail response as a HEX-ENCODED STRING (e.g. "0023" / "0024"),
+            which the client parses base-16 to obtain the decimal integer. For this
+            spec: 35 (0x0023) = Adventurer 5M, 36 (0x0024) = Adventurer 5M Pro.
+            (38 / 0x0026 = AD5X is documented in its own spec.) This is the preferred,
+            rename-proof model detector; see the Printer-PIDs wiki page for the full list.
         platTargetTemp:
           type: number
         platTemp:
@@ -610,6 +618,10 @@ components:
               type: integer
               default: -200
               description: Cooling fan speed (0-255, 0=off). Sentinel -200 (ignore).
+            coolingLeftFan:
+              type: integer
+              default: -200
+              description: Left part-cooling fan speed on dual-fan setups (e.g. 5M Pro / AD5X); single-fan machines ignore it. Sentinel -200 (ignore). `0` = off.
     JobCtlCmd:
       type: object
       description: Control print jobs (pause, resume, cancel)
@@ -632,7 +644,7 @@ components:
             action:
               type: string
               description: Control action
-              enum: [pause, continue, resume, cancel, stop]
+              enum: [pause, continue, cancel]
     DelayCloseCmd:
       type: object
       description: configure automatic power-off

@@ -114,7 +114,6 @@ paths:
                   - $ref: "#/components/schemas/DeviceUnregisterCmd"
                   - $ref: "#/components/schemas/DeviceUpdateDetailCmd"
                   - $ref: "#/components/schemas/NewJobCmd"
-                  - $ref: "#/components/schemas/NewLocalJobCmd"
       responses:
         '200':
           content:
@@ -175,7 +174,9 @@ paths:
   /printGcode:
     post:
       description: >-
-        Start printing a file from /data. Returns code/message.
+        Start printing a file from /data. Returns code/message. For AD5X multi-material
+        prints, the body also carries the material-station fields (useMatlStation, gcodeToolCnt,
+        materialMappings, etc.); see AD5X-IFS-Material-Station wiki for the full workflow.
       requestBody:
         required: true
         content:
@@ -196,6 +197,26 @@ paths:
                   type: string
                 levelingBeforePrint:
                   type: boolean
+                firstLayerInspection:
+                  type: boolean
+                  description: AD5X only — firmware dependent.
+                flowCalibration:
+                  type: boolean
+                  description: AD5X only — perform flow calibration.
+                timeLapseVideo:
+                  type: boolean
+                  description: AD5X only — capture time-lapse video.
+                useMatlStation:
+                  type: boolean
+                  description: AD5X only — drive the material station; true for multi-material prints.
+                gcodeToolCnt:
+                  type: integer
+                  description: AD5X only — number of tool channels in the gcode (1-4); equals materialMappings length.
+                materialMappings:
+                  type: array
+                  description: AD5X only — tool→slot mapping; JSON array in the body (Base64-encoded header on /uploadGcode).
+                  items:
+                    $ref: '#/components/schemas/MaterialMapping'
       responses:
         '200':
           content:
@@ -265,37 +286,37 @@ paths:
         required: true
         schema:
           type: string
-          description: String boolean, typically "0" or "1"
+          description: String boolean: "true" or "false" (lowercase)
       - in: header
         name: levelingBeforePrint
         required: true
         schema:
           type: string
-          description: String boolean, typically "0" or "1"
+          description: String boolean: "true" or "false" (lowercase)
       - in: header
         name: flowCalibration
         required: false
         schema:
           type: string
-          description: String boolean, typically "0" or "1" (AD5X only)
+          description: String boolean: "true" or "false" (lowercase, AD5X only)
       - in: header
         name: firstLayerInspection
         required: false
         schema:
           type: string
-          description: String boolean, typically "0" or "1" (AD5X only)
+          description: String boolean: "true" or "false" (lowercase, AD5X only)
       - in: header
         name: timeLapseVideo
         required: false
         schema:
           type: string
-          description: String boolean, typically "0" or "1" (AD5X only)
+          description: String boolean: "true" or "false" (lowercase, AD5X only)
       - in: header
         name: useMatlStation
         required: false
         schema:
           type: string
-          description: String boolean, typically "0" or "1" (AD5X only)
+          description: String boolean: "true" or "false" (lowercase, AD5X only)
       - in: header
         name: gcodeToolCnt
         required: false
@@ -307,7 +328,7 @@ paths:
         required: false
         schema:
           type: string
-          description: Base64-encoded JSON array of {toolId, slotId} objects (AD5X only, used when useMatlStation=1)
+          description: Base64-encoded JSON array of {toolId, slotId} objects (AD5X only, used when useMatlStation="true")
       requestBody:
         required: true
         content:
@@ -382,6 +403,72 @@ components:
           type: array
           items:
             type: string
+        gcodeListDetail:
+          type: array
+          description: >-
+            AD5X-extended detailed file list (object array; field name
+            `gcodeListDetail`, items are `GcodeFileEntry` objects). Carries
+            multi-material/tool metadata when present.
+          items:
+            $ref: "#/components/schemas/GcodeFileEntry"
+    GcodeFileEntry:
+      type: object
+      description: >-
+        Detailed gcode file entry returned in GcodeListResponse.gcodeListDetail by the
+        AD5X (and newer) firmware. The multi-material/tool fields are populated only
+        when the gcode declares tool/material metadata.
+      required:
+      - gcodeFileName
+      - printingTime
+      properties:
+        gcodeFileName:
+          type: string
+          description: G-code file name, e.g. "FISH_PLA.3mf".
+        gcodeToolCnt:
+          type: integer
+          description: Number of tools/materials used in this gcode file.
+        gcodeToolDatas:
+          type: array
+          description: Detailed info for each tool/material.
+          items:
+            $ref: "#/components/schemas/GcodeToolData"
+        printingTime:
+          type: integer
+          description: Estimated print time in seconds.
+        totalFilamentWeight:
+          type: number
+          description: Total estimated filament weight for the print (grams).
+        useMatlStation:
+          type: boolean
+          description: Whether the gcode is intended for use with a material station.
+    GcodeToolData:
+      type: object
+      description: >-
+        Per-tool/material metadata inside GcodeFileEntry.gcodeToolDatas. Distinct from
+        MaterialMapping: carries filamentWeight + materialColor, and slotId defaults to 0
+        when unassigned or for direct (non-station) feed.
+      required:
+      - filamentWeight
+      - materialColor
+      - materialName
+      - slotId
+      - toolId
+      properties:
+        toolId:
+          type: integer
+          description: 0-based extruder/tool index (0-3).
+        materialName:
+          type: string
+          description: Material type, e.g. "PLA".
+        materialColor:
+          type: string
+          description: Material color (#RRGGBB), e.g. "#FFFF00".
+        filamentWeight:
+          type: number
+          description: Calculated filament weight for this tool/material (grams).
+        slotId:
+          type: integer
+          description: Material station slot id; 0 if not applicable or direct feed.
     GcodeThumbResponse:
       type: object
       properties:
@@ -494,7 +581,12 @@ components:
           type: integer
         pid:
           type: integer
-          description: AD5X uses "0026" -> 26.
+          description: |
+            Product ID (canonical model identifier). The firmware reports this value
+            in the /detail response as a HEX-ENCODED STRING (e.g. "0026"), which the
+            client parses base-16 to obtain the decimal integer. For AD5X:
+            "0026" (hex) -> 0x0026 -> decimal 38. AD5X pid = 38. Do NOT read "0026"
+            as the decimal 26 — that is a known transcription error.
         platTargetTemp:
           type: number
         platTemp:
@@ -570,6 +662,34 @@ components:
         materialColor:
           type: string
           description: Color string before first ';' in config.
+    MaterialMapping:
+      type: object
+      description: >-
+        AD5X tool→slot mapping for a single gcode tool. toolId is 0-based (0-3); slotId is
+        1-based (1-4). Colors are #RRGGBB. Sent as a JSON array on /printGcode and as a
+        Base64-encoded JSON string on the /uploadGcode materialMappings header.
+      required:
+      - toolId
+      - slotId
+      - materialName
+      - toolMaterialColor
+      - slotMaterialColor
+      properties:
+        toolId:
+          type: integer
+          description: 0-based gcode tool index (0-3).
+        slotId:
+          type: integer
+          description: 1-based material station slot (1-4).
+        materialName:
+          type: string
+          description: Material type, e.g. "PLA".
+        toolMaterialColor:
+          type: string
+          description: Color declared in the gcode (#RRGGBB).
+        slotMaterialColor:
+          type: string
+          description: Color of the physical slot filament (#RRGGBB).
     IndepMatlInfo:
       type: object
       description: AD5X independent material info.
@@ -666,7 +786,7 @@ components:
               default: -200
               description: |
                 Print speed percentage. Maps to `M220 S<val>`.
-                Clamped range: 50-150.
+                Clamped range: 50-500.
                 Sentinel: -200 (ignore).
             chamberFan:
               type: integer
@@ -698,7 +818,7 @@ components:
             action:
               type: string
               description: Control action
-              enum: [pause, continue, resume, cancel, stop]
+              enum: [pause, continue, cancel]
     DelayCloseCmd:
       type: object
       description: configure automatic power-off
@@ -1021,42 +1141,3 @@ components:
         args:
           type: object
           description: Empty args object (no parameters required)
-    NewLocalJobCmd:
-      type: object
-      description: submit a new job to the print
-      required:
-      - cmd
-      - args
-      properties:
-        cmd:
-          type: string
-          enum: [newLocalJob_cmd]
-        args:
-          type: object
-          required:
-          - jobId
-          - fileName
-          - printNow
-          - leveling
-          properties:
-            jobId:
-              type: string
-            fileName:
-              type: string
-            thumbPath:
-              type: string
-            printNow:
-              type: boolean
-              description: Start printing immediately
-            leveling:
-              type: boolean
-              description: Perform bed leveling before print
-            flowCalibration:
-              type: boolean
-              description: Perform flow calibration (AD5X only)
-            useMs:
-              type: boolean
-              description: Use material station (AD5X only)
-            tCount:
-              type: integer
-              description: Material/tool count (AD5X only)

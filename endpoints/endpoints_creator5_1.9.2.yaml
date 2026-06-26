@@ -1,0 +1,910 @@
+# Creator 5 / Creator 5 Pro HTTP API (OrcaServer, cpp-httplib) on port 8898.
+# PID 40 (0x28) = Creator 5, PID 41 (0x29) = Creator 5 Pro. MIPS32 LE, Klipper.
+# Verified against firmware RE + the shipping @ghosttypes/ff-api client and FlashForgeUI.
+# NOTE: the Creator 5 is HTTP-ONLY — there is no TCP command server (8899).
+# NOTE: the firmware Content-Type response header is the typo "appliation/json".
+paths:
+  /checkCode:
+    post:
+      description: >-
+        Validate serialNumber + checkCode for LAN access. Returns code/message.
+        Must be called before other endpoints. Returns code -2 if LAN mode is off.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+  /detail:
+    post:
+      description: >-
+        Gets comprehensive printer status and configuration. Creator 5 specific:
+        nozzleCnt=4, per-tool nozzleTemps[]/nozzleTargetTemps[], matlStationInfo
+        present, chamberTemp reading active, lidar capability.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailResponse'
+  /product:
+    post:
+      description: >-
+        Returns product capability/control state flags. Creator 5 reports
+        chamberTempCtrlState=1. NOTE: internalFanCtrlState/externalFanCtrlState
+        read 0 even on the Pro (which has filtration) — capability should be
+        decided by model, not by these flags.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+  /control:
+    post:
+      description: >-
+        Send a command to the printer; dispatches on payload.cmd. Creator 5
+        accepts 12 commands (below). It does NOT implement the AD5X motion/
+        material commands (moveCtrl_cmd, homingCtrl_cmd, extrudeCtrl_cmd, ms_cmd,
+        ipdMs_cmd, errorCodeCtrl_cmd, clearFan_cmd, plateDetectControl_cmd,
+        firstLayerDetectControl_cmd). IMPORTANT: an unrecognized cmd is silently
+        ACKed with {code:0,"Success"} — a success response is NOT proof the
+        command did anything.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              - payload
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+                payload:
+                  oneOf:
+                  - $ref: "#/components/schemas/TemperatureCtlCmd"
+                  - $ref: "#/components/schemas/PrinterCtlCmd"
+                  - $ref: "#/components/schemas/LightControlCmd"
+                  - $ref: "#/components/schemas/CirculateCtlCmd"
+                  - $ref: "#/components/schemas/JobCtlCmd"
+                  - $ref: "#/components/schemas/StateCtrlCmd"
+                  - $ref: "#/components/schemas/MsConfigCmd"
+                  - $ref: "#/components/schemas/CalibrationCmd"
+                  - $ref: "#/components/schemas/ReNameCmd"
+                  - $ref: "#/components/schemas/StreamCtrlCmd"
+                  - $ref: "#/components/schemas/DelayCloseCmd"
+                  - $ref: "#/components/schemas/UserProfileCmd"
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+  /gcodeList:
+    post:
+      description: >-
+        Returns a list of printable G-code files from /usr/data/gcodes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GcodeListResponse'
+  /gcodeThumb:
+    post:
+      description: >-
+        Returns a base64 thumbnail for a given fileName.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              - fileName
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+                fileName:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GcodeThumbResponse'
+  /printGcode:
+    post:
+      description: >-
+        Start printing a stored file from /usr/data/gcodes. fileName +
+        levelingBeforePrint are required (else code -1). For a multi-tool print,
+        supply materialMappings (the per-tool->slot mapping). UNLIKE the AD5X,
+        the Creator 5 carries the material mapping HERE (at print-start), NOT in
+        the /uploadGcode headers. The firmware does NOT read useMatlStation,
+        gcodeToolCnt, or firstLayerInspection on this endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              - checkCode
+              - fileName
+              - levelingBeforePrint
+              properties:
+                serialNumber:
+                  type: string
+                checkCode:
+                  type: string
+                fileName:
+                  type: string
+                levelingBeforePrint:
+                  type: boolean
+                flowCalibration:
+                  type: boolean
+                  description: Always sent by the client; default false.
+                timeLapseVideo:
+                  type: boolean
+                  description: Always sent by the client; default false.
+                materialMappings:
+                  type: array
+                  description: >-
+                    Per-tool material mapping for multi-tool prints (max 4). Omit
+                    entirely for a single-tool print. Same 5-field shape as the AD5X.
+                  items:
+                    $ref: '#/components/schemas/MaterialMapping'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+  /getThum:
+    get:
+      description: >-
+        Returns current print thumbnail as image/bmp. On error returns JSON
+        code/message. Only checks LAN mode — no SN/checkCode required.
+      responses:
+        '200':
+          content:
+            image/bmp:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+  /notifyWanBind:
+    post:
+      description: >-
+        Notify WAN bind. Validates serialNumber and triggers a bind event on success.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - serialNumber
+              properties:
+                serialNumber:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+  /uploadGcode:
+    post:
+      description: >-
+        Upload a .gcode or .3mf file to /usr/data/gcodes via multipart/form-data
+        (field name gcodeFile), streamed. A .3mf is unzipped on-device to its
+        embedded .gcode. Requires LAN mode (else code -2); returns code 2 if busy.
+        The Creator 5 SENDS useMatlStation + gcodeToolCnt headers (flagging the
+        file as a material-station job), but does NOT send firstLayerInspection or
+        a materialMappings header — material mapping is supplied later at
+        /printGcode. All boolean headers are the lowercase strings "true"/"false".
+      parameters:
+      - in: header
+        name: serialNumber
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: checkCode
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: fileSize
+        required: true
+        schema:
+          type: integer
+          description: File size in bytes
+      - in: header
+        name: printNow
+        required: true
+        schema:
+          type: string
+          description: String boolean "true"/"false".
+      - in: header
+        name: levelingBeforePrint
+        required: true
+        schema:
+          type: string
+          description: String boolean "true"/"false".
+      - in: header
+        name: flowCalibration
+        required: false
+        schema:
+          type: string
+          description: String boolean "true"/"false".
+      - in: header
+        name: timeLapseVideo
+        required: false
+        schema:
+          type: string
+          description: String boolean "true"/"false".
+      - in: header
+        name: useMatlStation
+        required: false
+        schema:
+          type: string
+          description: >-
+            String boolean "true"/"false". Clients set "true" to flag the file as
+            a material-station job.
+      - in: header
+        name: gcodeToolCnt
+        required: false
+        schema:
+          type: integer
+          description: Number of tool channels in the gcode (always >= 1).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+              - gcodeFile
+              properties:
+                gcodeFile:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeMessageResponse'
+components:
+  schemas:
+    CodeMessageResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: "0 = success, -1 = parameter error, -2 = LAN mode disabled, 2 = busy"
+        message:
+          type: string
+    IsOpenEnum:
+      type: string
+      enum:
+      - open
+      - close
+    DetailResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        detail:
+          $ref: '#/components/schemas/Details'
+    ProductResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        product:
+          type: object
+          properties:
+            nozzleTempCtrlState:
+              type: integer
+            chamberTempCtrlState:
+              type: integer
+              description: 1 on the Creator 5 (has a chamber heater).
+            platformTempCtrlState:
+              type: integer
+            lightCtrlState:
+              type: integer
+            internalFanCtrlState:
+              type: integer
+              description: Reads 0 even on the Pro; do not use to detect filtration.
+            externalFanCtrlState:
+              type: integer
+              description: Reads 0 even on the Pro; do not use to detect filtration.
+    GcodeListResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        gcodeList:
+          type: array
+          items:
+            type: string
+    GcodeThumbResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        imageData:
+          type: string
+          description: Base64-encoded thumbnail image
+    Details:
+      type: object
+      description: >-
+        Creator 5 /detail. Based on the AD5X schema with Creator 5 additions
+        (live-confirmed on a Creator 5 Pro, firmware 1.9.2). Fields marked [C5]
+        are Creator 5 specific / newer vs the AD5X.
+      properties:
+        # Identity
+        pid:
+          type: integer
+          description: >-
+            Product ID (canonical model identifier). Reported as a hex-encoded
+            string and parsed base-16: Creator 5 = 40 (0x28), Creator 5 Pro = 41
+            (0x29).
+        ipAddr:
+          type: string
+        name:
+          type: string
+          description: 'User-set printer name (live: "Creator 5 Pro").'
+        model:
+          type: string
+          description: '[C5] Model name, e.g. "Creator 5 Pro".'
+        location:
+          type: string
+          description: Group/location label, e.g. "Group A".
+        firmwareVersion:
+          type: string
+        macAddr:
+          type: string
+        # Thermal — legacy scalars (NOT used to drive C5 tools)
+        rightTemp:
+          type: number
+          description: Legacy current scalar. On the C5 read nozzleTemps[] instead.
+        leftTemp:
+          type: number
+          description: Legacy current scalar. On the C5 read nozzleTemps[] instead.
+        rightTargetTemp:
+          type: number
+        leftTargetTemp:
+          type: number
+        # Thermal — per-tool [C5] (authoritative for the tool changer)
+        nozzleTemps:
+          type: array
+          items:
+            type: number
+          description: >-
+            [C5] Per-tool current nozzle temperatures (°C), 4 entries (T0-T3).
+            Use these for the tool changer; rightTemp/leftTemp are legacy.
+        nozzleTargetTemps:
+          type: array
+          items:
+            type: number
+          description: '[C5] Per-tool target nozzle temperatures (°C), 4 entries (T0-T3).'
+        # Thermal — bed
+        platTemp:
+          type: number
+        platTargetTemp:
+          type: number
+        # Thermal — chamber
+        chamberTemp:
+          type: number
+          description: >-
+            Current chamber temperature (°C) — reading is live-confirmed. (Chamber
+            HEATING control is unverified on hardware; see TemperatureCtlCmd.)
+        chamberTargetTemp:
+          type: number
+          description: Target chamber temperature (°C), up to 80.
+        # Print status
+        printFileName:
+          type: string
+        printFileThumbUrl:
+          type: string
+          description: http://<ip>:8898/getThum while printing.
+        estimatedTime:
+          type: number
+        printDuration:
+          type: integer
+        printProgress:
+          type: number
+        printLayer:
+          type: integer
+        targetPrintLayer:
+          type: integer
+        currentPrintSpeed:
+          type: integer
+        printSpeedAdjust:
+          type: number
+        # Filament
+        estimatedLeftLen:
+          type: number
+        estimatedRightLen:
+          type: number
+        estimatedLeftWeight:
+          type: number
+        estimatedRightWeight:
+          type: number
+        leftFilamentType:
+          type: string
+        rightFilamentType:
+          type: string
+        fillAmount:
+          type: integer
+        # Fans
+        internalFanStatus:
+          $ref: "#/components/schemas/IsOpenEnum"
+        externalFanStatus:
+          $ref: "#/components/schemas/IsOpenEnum"
+        chamberFanSpeed:
+          type: integer
+        coolingFanSpeed:
+          type: integer
+        # Configuration
+        autoShutdown:
+          $ref: "#/components/schemas/IsOpenEnum"
+        autoShutdownTime:
+          type: integer
+        lightStatus:
+          $ref: "#/components/schemas/IsOpenEnum"
+        doorStatus:
+          $ref: "#/components/schemas/IsOpenEnum"
+          description: Real only on the Pro (door sensor); cosmetic on the base Creator 5.
+        zAxisCompensation:
+          type: number
+        # Device capabilities
+        nozzleCnt:
+          type: integer
+          description: '[C5] Extruder count = 4 (tool changer).'
+        nozzleStyle:
+          type: integer
+        nozzleModel:
+          type: string
+        measure:
+          type: string
+          description: >-
+            Build volume reported by the printer. Live Creator 5 Pro = "256X256X256".
+            NOTE: the update-checker JSON lists "310x260x270" — that value is stale;
+            trust the on-device measure.
+        camera:
+          type: integer
+          description: Camera capability flag (Creator 5 has a built-in camera).
+        lidar:
+          type: integer
+          description: '[C5] First-layer scanner / lidar capability flag (new vs AD5X).'
+        status:
+          type: string
+        errorCode:
+          type: string
+        # Material station [C5] (present, same key as AD5X)
+        matlStationInfo:
+          $ref: "#/components/schemas/MatlStationInfo"
+        # Cloud
+        flashRegisterCode:
+          type: string
+        polarRegisterCode:
+          type: string
+        cameraStreamUrl:
+          type: string
+        # Statistics
+        cumulativeFilament:
+          type: number
+        cumulativePrintTime:
+          type: integer
+        remainingDiskSpace:
+          type: number
+    MatlStationInfo:
+      type: object
+      description: Creator 5 material-station / tool info.
+      properties:
+        slotCnt:
+          type: integer
+          description: 4.
+        currentSlot:
+          type: integer
+          description: Active slot; 0 = none/idle (real slots are 1-based, 1-4).
+        currentLoadSlot:
+          type: integer
+          description: Loading slot; 0 = none/idle.
+        stateAction:
+          type: integer
+        stateStep:
+          type: integer
+        slotInfos:
+          type: array
+          items:
+            $ref: "#/components/schemas/MatlSlotInfo"
+    MatlSlotInfo:
+      type: object
+      properties:
+        slotId:
+          type: integer
+          description: 1-based slot id (1-4).
+        hasFilament:
+          type: boolean
+        materialName:
+          type: string
+        materialColor:
+          type: string
+          description: '#RRGGBB hex string, e.g. "#4CAAF8".'
+    MaterialMapping:
+      type: object
+      description: >-
+        Creator 5 tool->slot mapping for one gcode tool (used on /printGcode for
+        multi-tool prints). Same 5-field shape as the AD5X. toolId is 0-based
+        (0-3); slotId is 1-based (1-4); colors are #RRGGBB.
+      required:
+      - toolId
+      - slotId
+      - materialName
+      - toolMaterialColor
+      - slotMaterialColor
+      properties:
+        toolId:
+          type: integer
+          description: 0-based gcode tool index (0-3).
+        slotId:
+          type: integer
+          description: 1-based material slot (1-4).
+        materialName:
+          type: string
+        toolMaterialColor:
+          type: string
+          description: Color declared in the gcode (#RRGGBB).
+        slotMaterialColor:
+          type: string
+          description: Color of the physical slot filament (#RRGGBB).
+    TemperatureCtlCmd:
+      type: object
+      description: >-
+        Set bed, chamber, and per-tool nozzle temperatures. CREATOR 5 SPECIFICS:
+        tool temperatures are driven ONLY through the nozzles[] array — the
+        firmware ignores the legacy rightNozzle/leftNozzle scalars. Every field
+        (including each nozzles[] element) uses sentinels: -200 = no change,
+        -100 = off (rewritten to 0), any other int = target °C. nozzles MUST be an
+        array of exactly 4 elements or the entire per-tool block is skipped.
+        CHAMBER: accepted and wired end-to-end, but chamber HEATING is unverified
+        on hardware (two testers report no heating; /control silently ACKs no-ops).
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [temperatureCtl_cmd]
+        args:
+          type: object
+          required:
+          - nozzles
+          properties:
+            platform:
+              type: integer
+              description: Heated bed target (°C). Sentinels apply.
+            rightNozzle:
+              type: integer
+              description: Legacy scalar — NOT read by Creator 5 firmware.
+            leftNozzle:
+              type: integer
+              description: Legacy scalar — NOT read by Creator 5 firmware.
+            chamber:
+              type: integer
+              description: Chamber heater target (°C), max 80. Sentinels apply. Control unverified.
+            nozzles:
+              type: array
+              minItems: 4
+              maxItems: 4
+              items:
+                type: integer
+              description: >-
+                Per-tool targets [T0,T1,T2,T3]. The only path that drives Creator 5
+                tool temperatures. Always send exactly 4; use -200 for tools you
+                are not changing.
+    PrinterCtlCmd:
+      type: object
+      description: >-
+        Set speed, fans, and z-axis compensation. Partial update: omitted fields
+        use sentinel -200 (ignore). Do NOT send 0 for fields you do not intend to
+        change.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [printerCtl_cmd]
+        args:
+          type: object
+          properties:
+            zAxisCompensation:
+              type: number
+              default: -200.0
+              description: Z-offset (mm), range -5.0 to +5.0. Sentinel -200.0 (ignore).
+            speed:
+              type: integer
+              default: -200
+              description: Print speed %. Sentinel -200 (ignore).
+            chamberFan:
+              type: integer
+              default: -200
+              description: Chamber fan speed (0-255). Sentinel -200 (ignore).
+            coolingFan:
+              type: integer
+              default: -200
+              description: Cooling fan speed (0-255). Sentinel -200 (ignore).
+    LightControlCmd:
+      type: object
+      description: Control the chamber LED.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [lightControl_cmd]
+        args:
+          type: object
+          required:
+          - status
+          properties:
+            status:
+              $ref: "#/components/schemas/IsOpenEnum"
+              description: open = on, close = off.
+    CirculateCtlCmd:
+      type: object
+      description: Control the filtration / circulation fans (Creator 5 Pro).
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [circulateCtl_cmd]
+        args:
+          type: object
+          properties:
+            internal:
+              $ref: "#/components/schemas/IsOpenEnum"
+            external:
+              $ref: "#/components/schemas/IsOpenEnum"
+    JobCtlCmd:
+      type: object
+      description: Control the current print job.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [jobCtl_cmd]
+        args:
+          type: object
+          required:
+          - action
+          properties:
+            jobID:
+              type: string
+            action:
+              type: string
+              enum: [pause, continue, cancel]
+    StateCtrlCmd:
+      type: object
+      description: Control the printer state (e.g. setClearPlatform).
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [stateCtrl_cmd]
+        args:
+          type: object
+          required:
+          - action
+          properties:
+            action:
+              type: string
+    MsConfigCmd:
+      type: object
+      description: >-
+        Configure material-station slot metadata (color/material name). Metadata
+        only — there is no load/unload command on the Creator 5. Wire keys are
+        {slot, mt, rgb} (the same as the AD5X); the leading '#' is stripped from rgb.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [msConfig_cmd]
+        args:
+          type: object
+          required:
+          - slot
+          - mt
+          - rgb
+          properties:
+            slot:
+              type: integer
+              description: Material slot (1-4).
+            mt:
+              type: string
+              description: Material name/type (e.g. "PLA"). See Creator-5-Filament-Palette.
+            rgb:
+              type: string
+              description: Color hex without '#' (e.g. "4CAAF8").
+    CalibrationCmd:
+      type: object
+      description: Configure leveling and vibration compensation (cloud/app-originated).
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [calibration_cmd]
+        args:
+          type: object
+          properties:
+            levelingDetection:
+              type: string
+            vibrationCompensation:
+              type: string
+    ReNameCmd:
+      type: object
+      description: Rename the printer.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [reName_cmd]
+        args:
+          type: object
+          required:
+          - name
+          properties:
+            name:
+              type: string
+    StreamCtrlCmd:
+      type: object
+      description: Control camera streaming.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [streamCtrl_cmd]
+        args:
+          type: object
+          required:
+          - action
+          properties:
+            action:
+              type: string
+    DelayCloseCmd:
+      type: object
+      description: Configure automatic power-off after print.
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [delayClose_cmd]
+        args:
+          type: object
+          required:
+          - automaticShutdown
+          - shutdownAfterTime
+          properties:
+            automaticShutdown:
+              type: string
+              description: open = enabled, close = disabled.
+            shutdownAfterTime:
+              type: integer
+              description: Delay in minutes.
+    UserProfileCmd:
+      type: object
+      description: User profile (cloud account management; not printer control).
+      required:
+      - cmd
+      - args
+      properties:
+        cmd:
+          type: string
+          enum: [userProfile_cmd]
+        args:
+          type: object
+          properties:
+            name:
+              type: string
+            avatar:
+              type: string

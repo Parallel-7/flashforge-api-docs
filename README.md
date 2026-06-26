@@ -12,6 +12,7 @@ All documentation lives in the **[Wiki](../../wiki)**.
 |--------|-------------|------|-----------|
 | Adventurer 5M / 5M Pro | HTTP REST (8898) + TCP (8899) | CheckCode | [Adventurer 5M Series](../../wiki/Adventurer-5M-Series) |
 | AD5X | HTTP REST (8898) + TCP (8899) + IFS | CheckCode | [AD5X](../../wiki/AD5X) |
+| Creator 5 / 5 Pro | HTTP REST (8898) only — no TCP | CheckCode | [Creator 5 Series](../../wiki/Creator-5-Series) |
 | Adventurer 4 Pro / Lite | TCP (8899) | None | [Adventurer 4 Series](../../wiki/Adventurer-4-Series) |
 | Adventurer 3 Series | TCP (8899) | None | [Adventurer 3 Series](../../wiki/Adventurer-3-Series) |
 
@@ -38,6 +39,8 @@ All documentation lives in the **[Wiki](../../wiki)**.
   - **[5M Pro Features](../../wiki/Adventurer-5M-Pro-Features)** — Camera, air filtration, TVOC monitoring
 - **[AD5X](../../wiki/AD5X)** — Material station commands, manual control, extended endpoints
   - **[IFS Material Station](../../wiki/AD5X-IFS-Material-Station)** — Multi-material slot management, load/unload, color mapping
+- **[Creator 5 Series](../../wiki/Creator-5-Series)** — 4-head tool-changer; HTTP-only, per-tool temps, material station, distinct command set
+  - **[Creator 5 Filament Palette](../../wiki/Creator-5-Filament-Palette)** — The Creator 5's own 24-color palette and 21-material list
 - **[Adventurer 4 Series](../../wiki/Adventurer-4-Series)** — TCP-only, 33 commands, Pro/Lite variant comparison
 - **[Adventurer 3 Series](../../wiki/Adventurer-3-Series)** — Legacy TCP protocol, 37 commands, 4 variant comparison
 
@@ -58,6 +61,7 @@ Machine-readable endpoint specifications are available in the [`endpoints/`](end
 | `endpoints_5m_3.2.7.yaml` | Adventurer 5M / 5M Pro HTTP endpoints (firmware 3.2.7) |
 | `endpoints_ad5x_1.1.7.yaml` | AD5X HTTP endpoints (firmware 1.1.7) |
 | `endpoints_ad5x_1.2.1.yaml` | AD5X HTTP endpoints (firmware 1.2.1) |
+| `endpoints_creator5_1.9.2.yaml` | Creator 5 / 5 Pro HTTP endpoints (HTTP-only, firmware 1.7.8 / 1.9.2) |
 | `networkserver_commands_adventurer3.yaml` | Adventurer 3 TCP commands |
 | `networkserver_commands_adventurer4.yaml` | Adventurer 4 TCP commands |
 
