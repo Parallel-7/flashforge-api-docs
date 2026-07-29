@@ -1,8 +1,9 @@
 # Creator 5 / Creator 5 Pro HTTP API (OrcaServer, cpp-httplib) on port 8898.
 # PID 40 (0x28) = Creator 5, PID 41 (0x29) = Creator 5 Pro. MIPS32 LE, Klipper.
-# Verified against firmware RE + the shipping @ghosttypes/ff-api client and FlashForgeUI.
 # NOTE: the Creator 5 is HTTP-ONLY — there is no TCP command server (8899).
 # NOTE: the firmware Content-Type response header is the typo "appliation/json".
+# NOTE: this spec describes firmware 1.9.2. Firmware 1.9.4 is also shipping and
+#       exposes the same endpoints, /control commands and /detail fields.
 paths:
   /checkCode:
     post:
@@ -34,7 +35,8 @@ paths:
       description: >-
         Gets comprehensive printer status and configuration. Creator 5 specific:
         nozzleCnt=4, per-tool nozzleTemps[]/nozzleTargetTemps[], matlStationInfo
-        present, chamberTemp reading active, lidar capability.
+        present, chamberTemp live on the Pro only (base C5 reports -108), lidar
+        capability.
       requestBody:
         required: true
         content:
@@ -58,10 +60,12 @@ paths:
   /product:
     post:
       description: >-
-        Returns product capability/control state flags. Creator 5 reports
-        chamberTempCtrlState=1. NOTE: internalFanCtrlState/externalFanCtrlState
-        read 0 even on the Pro (which has filtration) — capability should be
-        decided by model, not by these flags.
+        Returns product capability/control state flags. NOTE: these flags are
+        UNRELIABLE on the Creator 5 — chamberTempCtrlState reads 1 even on the
+        base Creator 5 (which has no chamber heater), lightCtrlState is likewise
+        untrustworthy, and internalFanCtrlState/externalFanCtrlState read 0 even
+        on the Pro (which has filtration hardware). Decide capability from the
+        model/PID, not from these flags.
       requestBody:
         required: true
         content:
@@ -86,12 +90,11 @@ paths:
     post:
       description: >-
         Send a command to the printer; dispatches on payload.cmd. Creator 5
-        accepts 12 commands (below). It does NOT implement the AD5X motion/
+        accepts 12 commands (below). It does NOT implement the 7 AD5X motion/
         material commands (moveCtrl_cmd, homingCtrl_cmd, extrudeCtrl_cmd, ms_cmd,
-        ipdMs_cmd, errorCodeCtrl_cmd, clearFan_cmd, plateDetectControl_cmd,
-        firstLayerDetectControl_cmd). IMPORTANT: an unrecognized cmd is silently
-        ACKed with {code:0,"Success"} — a success response is NOT proof the
-        command did anything.
+        ipdMs_cmd, ipdMsConfig_cmd, errorCodeCtrl_cmd). IMPORTANT: an
+        unrecognized cmd is silently ACKed with {code:0,"Success"} — a success
+        response is NOT proof the command did anything.
       requestBody:
         required: true
         content:
@@ -383,11 +386,15 @@ components:
               type: integer
             chamberTempCtrlState:
               type: integer
-              description: 1 on the Creator 5 (has a chamber heater).
+              description: >-
+                Unreliable — OVER-REPORTS on the base Creator 5, which has no
+                chamber heater at all. Only the Creator 5 Pro has one. Decide
+                from the model/PID, not this flag.
             platformTempCtrlState:
               type: integer
             lightCtrlState:
               type: integer
+              description: Unreliable on the Creator 5; decide from the model/PID.
             internalFanCtrlState:
               type: integer
               description: Reads 0 even on the Pro; do not use to detect filtration.
@@ -477,11 +484,12 @@ components:
         chamberTemp:
           type: number
           description: >-
-            Current chamber temperature (°C) — reading is live-confirmed. (Chamber
-            HEATING control is unverified on hardware; see TemperatureCtlCmd.)
+            Current chamber temperature (°C). Live on the Creator 5 Pro (has a
+            chamber heater). The base Creator 5 has no chamber sensor and reports
+            the sentinel -108.
         chamberTargetTemp:
           type: number
-          description: Target chamber temperature (°C), up to 80.
+          description: Target chamber temperature (°C), up to 80. (Pro only)
         # Print status
         printFileName:
           type: string
@@ -526,6 +534,13 @@ components:
           type: integer
         coolingFanSpeed:
           type: integer
+        tvoc:
+          type: integer
+          description: >-
+            Air-quality (TVOC) reading, same shape as the AD5X/5M field.
+            Creator 5 Pro only and READ-ONLY — the Pro has the filtration
+            hardware but circulateCtl_cmd does not actuate it. The base
+            Creator 5 has no filtration and cannot report TVOC.
         # Configuration
         autoShutdown:
           $ref: "#/components/schemas/IsOpenEnum"
@@ -563,6 +578,10 @@ components:
         errorCode:
           type: string
         # Material station [C5] (present, same key as AD5X)
+        # NOTE: the raw firmware hasMatlStation field is AD5X-ONLY and is OMITTED
+        # on the Creator 5 Pro even when the 4-slot station is present. Derive
+        # material-station capability from slotCnt / slotInfos, never from
+        # hasMatlStation.
         matlStationInfo:
           $ref: "#/components/schemas/MatlStationInfo"
         # Cloud
@@ -649,8 +668,10 @@ components:
         (including each nozzles[] element) uses sentinels: -200 = no change,
         -100 = off (rewritten to 0), any other int = target °C. nozzles MUST be an
         array of exactly 4 elements or the entire per-tool block is skipped.
-        CHAMBER: accepted and wired end-to-end, but chamber HEATING is unverified
-        on hardware (two testers report no heating; /control silently ACKs no-ops).
+        CHAMBER: only the Creator 5 Pro has a chamber heater; the `chamber` field
+        is verified to set/control the chamber temperature (max 80 °C) on the Pro.
+        The base Creator 5 has no chamber heater — sending `chamber` is silently
+        ACKed and does nothing, and /detail reports chamberTemp=-108.
       required:
       - cmd
       - args
@@ -674,7 +695,9 @@ components:
               description: Legacy scalar — NOT read by Creator 5 firmware.
             chamber:
               type: integer
-              description: Chamber heater target (°C), max 80. Sentinels apply. Control unverified.
+              description: >-
+                Chamber heater target (°C), max 80. Sentinels apply. Pro only —
+                base Creator 5 has no chamber heater; no-op.
             nozzles:
               type: array
               minItems: 4
@@ -737,7 +760,10 @@ components:
               description: open = on, close = off.
     CirculateCtlCmd:
       type: object
-      description: Control the filtration / circulation fans (Creator 5 Pro).
+      description: >-
+        Control the filtration / circulation fans (Creator 5 Pro).
+        NOTE: accepted but does not actuate the fans on the Pro (silently ACKed);
+        the base Creator 5 has no filtration. Read TVOC only.
       required:
       - cmd
       - args
@@ -854,7 +880,10 @@ components:
               type: string
     StreamCtrlCmd:
       type: object
-      description: Control camera streaming.
+      description: >-
+        Control camera streaming. NOTE: a no-op across the WHOLE Creator 5 series
+        — ACKed with {code:0,"Success"} but the MJPEG stream on :8080 never stops;
+        cameraStreamUrl is always advertised.
       required:
       - cmd
       - args
