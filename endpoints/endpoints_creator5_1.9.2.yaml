@@ -134,6 +134,8 @@ paths:
     post:
       description: >-
         Returns a list of printable G-code files from /usr/data/gcodes.
+        File names only - no gcodeListDetail, unlike the AD5X. See
+        GcodeListResponse.
       requestBody:
         required: true
         content:
@@ -403,6 +405,14 @@ components:
               description: Reads 0 even on the Pro; do not use to detect filtration.
     GcodeListResponse:
       type: object
+      description: >-
+        File NAMES only. The absence of gcodeListDetail here is the observed
+        behavior, not an omission for brevity: the Creator 5 returns no per-file
+        metadata at all - no printing time, no filament weight, and no
+        gcodeToolDatas - where the older AD5X returns a full gcodeListDetail
+        array. Live-confirmed on a Creator 5 Pro (2026-08-05). Per-tool material
+        data for a Creator 5 file is therefore unavailable over HTTP; a client
+        that needs it must parse the 3mf before upload.
       properties:
         code:
           type: integer
