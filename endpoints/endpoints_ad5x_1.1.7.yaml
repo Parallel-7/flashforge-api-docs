@@ -538,6 +538,7 @@ components:
           type: number
         estimatedTime:
           type: number
+          description: Remaining print time in seconds (countdown; firmware-derived from progress). 0.0 when idle.
         externalFanStatus:
           $ref: "#/components/schemas/IsOpenEnum"
         fillAmount:
@@ -595,6 +596,7 @@ components:
           type: string
         printDuration:
           type: integer
+          description: Elapsed print time in seconds for the current job. 0 when idle.
         printFileName:
           type: string
         printFileThumbUrl:

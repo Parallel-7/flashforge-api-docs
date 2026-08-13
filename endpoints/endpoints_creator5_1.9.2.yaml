@@ -508,8 +508,10 @@ components:
           description: http://<ip>:8898/getThum while printing.
         estimatedTime:
           type: number
+          description: Remaining print time in seconds (countdown; firmware-derived from progress). 0.0 when idle.
         printDuration:
           type: integer
+          description: Elapsed print time in seconds for the current job. 0 when idle.
         printProgress:
           type: number
         printLayer:
