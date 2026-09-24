@@ -187,10 +187,15 @@ paths:
     post:
       description: >-
         Start printing a stored file from /usr/data/gcodes. fileName +
-        levelingBeforePrint are required (else code -1). For a multi-tool print,
-        supply materialMappings (the per-tool->slot mapping). UNLIKE the AD5X,
-        the Creator 5 carries the material mapping HERE (at print-start), NOT in
-        the /uploadGcode headers. The firmware does NOT read useMatlStation,
+        levelingBeforePrint are required (else code -1). Supply materialMappings
+        (the tool->slot mapping) with one element for EVERY tool, single-tool
+        prints included. Without a mapping, each tool prints from the slot that
+        matches its slicer filament number (filament 1 -> slot 1, filament 2 ->
+        slot 2, and so on). Mappings take effect only for .3mf files; the
+        printer ignores them for plain .gcode. This endpoint applies mappings to
+        any file stored on the printer, not only the most recent upload. It is
+        the recommended way to apply mappings: upload with printNow "false",
+        then call /printGcode. The printer does NOT read useMatlStation,
         gcodeToolCnt, or firstLayerInspection on this endpoint.
       requestBody:
         required: true
@@ -221,8 +226,9 @@ paths:
                 materialMappings:
                   type: array
                   description: >-
-                    Per-tool material mapping for multi-tool prints (max 4). Omit
-                    entirely for a single-tool print. Same 5-field shape as the AD5X.
+                    Tool->slot mapping (max 4). Send one element for every tool,
+                    single-tool prints included. Takes effect only for .3mf
+                    files. Same 5-field shape as the AD5X.
                   items:
                     $ref: '#/components/schemas/MaterialMapping'
       responses:
@@ -273,10 +279,17 @@ paths:
         Upload a .gcode or .3mf file to /usr/data/gcodes via multipart/form-data
         (field name gcodeFile), streamed. A .3mf is unzipped on-device to its
         embedded .gcode. Requires LAN mode (else code -2); returns code 2 if busy.
-        The Creator 5 SENDS useMatlStation + gcodeToolCnt headers (flagging the
-        file as a material-station job), but does NOT send firstLayerInspection or
-        a materialMappings header — material mapping is supplied later at
-        /printGcode. All boolean headers are the lowercase strings "true"/"false".
+        Accepts an optional materialMappings header (Base64-encoded JSON array,
+        same format as the AD5X upload header). The printer applies it only when
+        this upload also starts the print (printNow "true"). The printer keeps
+        upload mappings in memory until the next print ends, so NEVER send
+        materialMappings on an upload that does not start the print: the
+        mappings can apply to a later, unrelated print. Recommended: upload with
+        printNow "false" and no mappings, then start with /printGcode plus
+        materialMappings. The printer ignores the useMatlStation and gcodeToolCnt
+        headers; clients can still send them for compatibility. There is no
+        firstLayerInspection header. All boolean headers are the lowercase
+        strings "true"/"false".
       parameters:
       - in: header
         name: serialNumber
@@ -324,14 +337,25 @@ paths:
         schema:
           type: string
           description: >-
-            String boolean "true"/"false". Clients set "true" to flag the file as
-            a material-station job.
+            String boolean "true"/"false". Ignored by the printer; clients can
+            send it for compatibility with the AD5X.
       - in: header
         name: gcodeToolCnt
         required: false
         schema:
           type: integer
-          description: Number of tool channels in the gcode (always >= 1).
+          description: >-
+            Number of tool channels in the gcode. Ignored by the printer; clients
+            can send it for compatibility with the AD5X.
+      - in: header
+        name: materialMappings
+        required: false
+        schema:
+          type: string
+          description: >-
+            Base64-encoded JSON array of MaterialMapping elements (same format
+            as the AD5X upload header). Applied only when printNow is "true".
+            Send it ONLY when printNow is "true"; see the endpoint description.
       requestBody:
         required: true
         content:
@@ -412,7 +436,7 @@ components:
         gcodeToolDatas - where the older AD5X returns a full gcodeListDetail
         array. Live-confirmed on a Creator 5 Pro (2026-08-05). Per-tool material
         data for a Creator 5 file is therefore unavailable over HTTP; a client
-        that needs it must parse the 3mf before upload.
+        that needs it must read it from its own copy of the 3mf.
       properties:
         code:
           type: integer
@@ -514,6 +538,10 @@ components:
           description: Elapsed print time in seconds for the current job. 0 when idle.
         printProgress:
           type: number
+          description: >-
+            Fraction of the file read so far (byte position), 0.0-1.0. Not a
+            time or layer estimate. The printer reports no per-tool filament
+            usage.
         printLayer:
           type: integer
         targetPrintLayer:
@@ -647,9 +675,11 @@ components:
     MaterialMapping:
       type: object
       description: >-
-        Creator 5 tool->slot mapping for one gcode tool (used on /printGcode for
-        multi-tool prints). Same 5-field shape as the AD5X. toolId is 0-based
-        (0-3); slotId is 1-based (1-4); colors are #RRGGBB.
+        Creator 5 tool->slot mapping for one gcode tool. Used in the
+        /printGcode body, or Base64-encoded in the /uploadGcode header when
+        printNow is "true". Send one for every tool. Same 5-field shape as the
+        AD5X. toolId is 0-based (0-3); slotId is 1-based (1-4); colors are
+        #RRGGBB.
       required:
       - toolId
       - slotId
@@ -659,7 +689,10 @@ components:
       properties:
         toolId:
           type: integer
-          description: 0-based gcode tool index (0-3).
+          description: >-
+            Slicer filament number minus 1 (filament 1 -> 0), range 0-3. NOT the
+            position in the list of filaments the plate uses: a plate that uses
+            filaments 1 and 3 has toolIds 0 and 2.
         slotId:
           type: integer
           description: 1-based material slot (1-4).
