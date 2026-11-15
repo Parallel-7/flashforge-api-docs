@@ -256,13 +256,13 @@ paths:
         required: true
         schema:
           type: string
-          description: String boolean: "true" or "false" (lowercase)
+          description: 'String boolean: "true" or "false" (lowercase)'
       - in: header
         name: levelingBeforePrint
         required: true
         schema:
           type: string
-          description: String boolean: "true" or "false" (lowercase)
+          description: 'String boolean: "true" or "false" (lowercase)'
       requestBody:
         required: true
         content:
@@ -302,6 +302,13 @@ components:
       properties:
         code:
           type: integer
+          description: >-
+            0 = success, -1 = parameter error ("Parameters is error"; on /checkCode
+            "Parameters is different"), -2 = LAN-only mode is off ("Lan mode error"),
+            1 = credential mismatch ("SN is different" / "Access code is different"),
+            2 = busy ("Printer is busy" / "Printer is Busy."), 3 = file not found
+            ("File does not exist.", /printGcode). HTTP status is always 200.
+            Code -2: Adventurer 5M / 5M Pro firmware 3.1.3 - 5.1.4 (this spec: 3.2.7) send it in cloud mode on every route except /notifyWanBind. Firmware 5.1.8 and later do not send it.
         message:
           type: string
     ProductResponse:
@@ -425,10 +432,8 @@ components:
           type: integer
           enum: [35, 36]
           description: |
-            Product ID (canonical model identifier). The firmware reports this value
-            in the /detail response as a HEX-ENCODED STRING (e.g. "0023" / "0024"),
-            which the client parses base-16 to obtain the decimal integer. For this
-            spec: 35 (0x0023) = Adventurer 5M, 36 (0x0024) = Adventurer 5M Pro.
+            Product ID (canonical model identifier). The /detail response carries it as a
+            JSON integer: 35 (0x0023) = Adventurer 5M, 36 (0x0024) = Adventurer 5M Pro.
             (38 / 0x0026 = AD5X is documented in its own spec.) This is the preferred,
             rename-proof model detector; see the Printer-PIDs wiki page for the full list.
         platTargetTemp:
@@ -602,7 +607,8 @@ components:
               type: number
               default: -200.0
               description: |
-                Z-offset in mm. Maps to `SET_GCODE_OFFSET Z=<val> MOVE=1`.
+                Z-offset in mm, relative to the starting offset of the job. The value replaces
+                the last adjustment. It does not add to it. `0` removes the current adjustment.
                 Range: -5.0 to +5.0. Values outside this range are ignored.
                 Sentinel: -200.0 (ignore).
             speed:
@@ -615,15 +621,11 @@ components:
             chamberFan:
               type: integer
               default: -200
-              description: Chamber fan speed (0-255, 0=off). Sentinel -200 (ignore).
+              description: Chamber fan speed, percent (0-100, 0=off). Applied only when the value is 0 or more. Sentinel -200 (ignore).
             coolingFan:
               type: integer
               default: -200
-              description: Cooling fan speed (0-255, 0=off). Sentinel -200 (ignore).
-            coolingLeftFan:
-              type: integer
-              default: -200
-              description: Left part-cooling fan speed on dual-fan setups (e.g. 5M Pro / AD5X); single-fan machines ignore it. Sentinel -200 (ignore). `0` = off.
+              description: Cooling fan speed, percent (0-100, 0=off). Applied only when the value is 0 or more. Sentinel -200 (ignore).
     JobCtlCmd:
       type: object
       description: Control print jobs (pause, resume, cancel)

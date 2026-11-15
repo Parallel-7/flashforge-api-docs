@@ -2,8 +2,9 @@
 # PID 40 (0x28) = Creator 5, PID 41 (0x29) = Creator 5 Pro. MIPS32 LE, Klipper.
 # NOTE: the Creator 5 is HTTP-ONLY — there is no TCP command server (8899).
 # NOTE: the firmware Content-Type response header is the typo "appliation/json".
-# NOTE: this spec describes firmware 1.9.2. Firmware 1.9.4 is also shipping and
-#       exposes the same endpoints, /control commands and /detail fields.
+# NOTE: this spec describes firmware 1.9.2. Firmware 1.9.4, 1.9.6 and 1.9.8
+#       expose the same endpoints, /control commands and /detail fields
+#       (verified against the 1.9.6 and 1.9.8 binaries).
 paths:
   /checkCode:
     post:
@@ -61,11 +62,12 @@ paths:
     post:
       description: >-
         Returns product capability/control state flags. NOTE: these flags are
-        UNRELIABLE on the Creator 5 — chamberTempCtrlState reads 1 even on the
-        base Creator 5 (which has no chamber heater), lightCtrlState is likewise
-        untrustworthy, and internalFanCtrlState/externalFanCtrlState read 0 even
-        on the Pro (which has filtration hardware). Decide capability from the
-        model/PID, not from these flags.
+        FIXED VALUES on the Creator 5, not hardware readings — every unit
+        returns the same set (nozzleTempCtrlState=1, chamberTempCtrlState=1,
+        platformTempCtrlState=1, lightCtrlState=1, internalFanCtrlState=0,
+        externalFanCtrlState=0), including the base Creator 5 which has no
+        chamber heater and the Pro which has filtration hardware. Decide
+        capability from the model/PID, not from these flags.
       requestBody:
         required: true
         content:
@@ -196,7 +198,9 @@ paths:
         any file stored on the printer, not only the most recent upload. It is
         the recommended way to apply mappings: upload with printNow "false",
         then call /printGcode. The printer does NOT read useMatlStation,
-        gcodeToolCnt, or firstLayerInspection on this endpoint.
+        gcodeToolCnt, or firstLayerInspection on this endpoint. Response codes:
+        0 = started, 2 = "Printer is Busy." (printer must be idle), 3 = "File
+        does not exist.", -1 = missing/malformed required field.
       requestBody:
         required: true
         content:
@@ -381,7 +385,11 @@ components:
       properties:
         code:
           type: integer
-          description: "0 = success, -1 = parameter error, -2 = LAN mode disabled, 2 = busy"
+          description: >-
+            0 = success, -1 = parameter error ("Parameters is error"), -2 = LAN
+            mode disabled ("Lan mode error"), 1 = credential mismatch ("SN is
+            different" / "Access code is different"), 2 = busy ("Printer is
+            Busy."), 3 = file not found ("File does not exist.", /printGcode).
         message:
           type: string
     IsOpenEnum:
@@ -410,23 +418,25 @@ components:
           properties:
             nozzleTempCtrlState:
               type: integer
+              description: Fixed value 1 on every unit.
             chamberTempCtrlState:
               type: integer
               description: >-
-                Unreliable — OVER-REPORTS on the base Creator 5, which has no
-                chamber heater at all. Only the Creator 5 Pro has one. Decide
-                from the model/PID, not this flag.
+                Fixed value 1 on every unit — including the base Creator 5,
+                which has no chamber heater. Only the Creator 5 Pro has one.
+                Decide from the model/PID, not this flag.
             platformTempCtrlState:
               type: integer
+              description: Fixed value 1 on every unit.
             lightCtrlState:
               type: integer
-              description: Unreliable on the Creator 5; decide from the model/PID.
+              description: Fixed value 1 on every unit; decide from the model/PID.
             internalFanCtrlState:
               type: integer
-              description: Reads 0 even on the Pro; do not use to detect filtration.
+              description: Fixed value 0 on every unit; do not use to detect filtration.
             externalFanCtrlState:
               type: integer
-              description: Reads 0 even on the Pro; do not use to detect filtration.
+              description: Fixed value 0 on every unit; do not use to detect filtration.
     GcodeListResponse:
       type: object
       description: >-
@@ -568,19 +578,26 @@ components:
         # Fans
         internalFanStatus:
           $ref: "#/components/schemas/IsOpenEnum"
+          description: FIXED "close" on both models - not a live reading. Do not use.
         externalFanStatus:
           $ref: "#/components/schemas/IsOpenEnum"
+          description: FIXED "close" on both models - not a live reading. Do not use.
         chamberFanSpeed:
           type: integer
+          description: >-
+            Chamber fan speed state, read-only. Present on both models.
+            The printer sets it itself (chamber heating, print start,
+            filament change); no API command drives the chamber fans.
         coolingFanSpeed:
           type: integer
+          description: Cooling fan speed state, read-only. Present on both models.
         tvoc:
           type: integer
           description: >-
-            Air-quality (TVOC) reading, same shape as the AD5X/5M field.
-            Creator 5 Pro only and READ-ONLY — the Pro has the filtration
-            hardware but circulateCtl_cmd does not actuate it. The base
-            Creator 5 has no filtration and cannot report TVOC.
+            Same key as the AD5X/5M air-quality field, but the Creator 5
+            ALWAYS returns 0. Both models return the fixed value 0 on
+            every firmware from 1.7.8 through 1.9.8. No TVOC reading is
+            available over the API. Do not use this field.
         # Configuration
         autoShutdown:
           $ref: "#/components/schemas/IsOpenEnum"
@@ -590,7 +607,11 @@ components:
           $ref: "#/components/schemas/IsOpenEnum"
         doorStatus:
           $ref: "#/components/schemas/IsOpenEnum"
-          description: Real only on the Pro (door sensor); cosmetic on the base Creator 5.
+          description: >-
+            Reports "close" only when BOTH door sensors read closed; either
+            sensor open reports "open" (front door + top lid on the Pro).
+            Both models run the same logic. The base Creator 5 ships no
+            door sensors — treat its value as not meaningful.
         zAxisCompensation:
           type: number
         # Device capabilities
@@ -709,14 +730,16 @@ components:
       description: >-
         Set bed, chamber, and per-tool nozzle temperatures. CREATOR 5 SPECIFICS:
         tool temperatures are driven ONLY through the nozzles[] array — the
-        firmware ignores the legacy rightNozzle/leftNozzle scalars. Every field
-        (including each nozzles[] element) uses sentinels: -200 = no change,
-        -100 = off (rewritten to 0), any other int = target °C. nozzles MUST be an
-        array of exactly 4 elements or the entire per-tool block is skipped.
-        CHAMBER: only the Creator 5 Pro has a chamber heater; the `chamber` field
-        is verified to set/control the chamber temperature (max 80 °C) on the Pro.
-        The base Creator 5 has no chamber heater — sending `chamber` is silently
-        ACKed and does nothing, and /detail reports chamberTemp=-108.
+        firmware ignores the legacy rightNozzle/leftNozzle scalars. Scalar
+        fields (platform, chamber) use sentinels: -200 = no change, -100 = off
+        (rewritten to 0), any other int = target °C. Each nozzles[] element:
+        ANY negative value = no change, 0 = off, positive = target °C. nozzles
+        MUST be an array of exactly 4 elements or the entire per-tool block is
+        skipped. CHAMBER: only the Creator 5 Pro has a chamber heater; the
+        `chamber` field is verified to set/control the chamber temperature (max
+        80 °C) on the Pro. The base Creator 5 has no chamber heater — sending
+        `chamber` is silently ACKed and does nothing, and /detail reports
+        chamberTemp=-108.
       required:
       - cmd
       - args
@@ -772,7 +795,9 @@ components:
             zAxisCompensation:
               type: number
               default: -200.0
-              description: Z-offset (mm), range -5.0 to +5.0. Sentinel -200.0 (ignore).
+              description: >-
+                Z-offset (mm). Sentinel -200.0 = ignore. Send -100 to reset the
+                offset to 0.0. The API layer applies no range clamp.
             speed:
               type: integer
               default: -200
@@ -865,7 +890,9 @@ components:
       description: >-
         Configure material-station slot metadata (color/material name). Metadata
         only — there is no load/unload command on the Creator 5. Wire keys are
-        {slot, mt, rgb} (the same as the AD5X); the leading '#' is stripped from rgb.
+        {slot, mt, rgb}. The rgb value is matched exactly against the 24-color
+        palette, INCLUDING the leading '#'. A value that matches no palette
+        entry still succeeds and stores color index 0 (#FFFFFF).
       required:
       - cmd
       - args
@@ -885,10 +912,16 @@ components:
               description: Material slot (1-4).
             mt:
               type: string
-              description: Material name/type (e.g. "PLA"). See Creator-5-Filament-Palette.
+              description: >-
+                Material name/type (e.g. "PLA"). Must match a palette-list
+                material name exactly (case-sensitive). See
+                Creator-5-Filament-Palette.
             rgb:
               type: string
-              description: Color hex without '#' (e.g. "4CAAF8").
+              description: >-
+                Palette color string WITH '#' (e.g. "#4CAAF8"). Case-sensitive
+                exact match against the 24-color palette. Not yet verified on
+                hardware.
     CalibrationCmd:
       type: object
       description: Configure leveling and vibration compensation (cloud/app-originated).

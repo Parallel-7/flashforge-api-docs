@@ -286,37 +286,37 @@ paths:
         required: true
         schema:
           type: string
-          description: String boolean: "true" or "false" (lowercase)
+          description: 'String boolean: "true" or "false" (lowercase)'
       - in: header
         name: levelingBeforePrint
         required: true
         schema:
           type: string
-          description: String boolean: "true" or "false" (lowercase)
+          description: 'String boolean: "true" or "false" (lowercase)'
       - in: header
         name: flowCalibration
         required: false
         schema:
           type: string
-          description: String boolean: "true" or "false" (lowercase, AD5X only)
+          description: 'String boolean: "true" or "false" (lowercase, AD5X only)'
       - in: header
         name: firstLayerInspection
         required: false
         schema:
           type: string
-          description: String boolean: "true" or "false" (lowercase, AD5X only)
+          description: 'String boolean: "true" or "false" (lowercase, AD5X only)'
       - in: header
         name: timeLapseVideo
         required: false
         schema:
           type: string
-          description: String boolean: "true" or "false" (lowercase, AD5X only)
+          description: 'String boolean: "true" or "false" (lowercase, AD5X only)'
       - in: header
         name: useMatlStation
         required: false
         schema:
           type: string
-          description: String boolean: "true" or "false" (lowercase, AD5X only)
+          description: 'String boolean: "true" or "false" (lowercase, AD5X only)'
       - in: header
         name: gcodeToolCnt
         required: false
@@ -368,6 +368,13 @@ components:
       properties:
         code:
           type: integer
+          description: >-
+            0 = success, -1 = parameter error ("Parameters is error"; on /checkCode
+            "Parameters is different"), -2 = LAN-only mode is off ("Lan mode error"),
+            1 = credential mismatch ("SN is different" / "Access code is different"),
+            2 = busy ("Printer is busy" / "Printer is Busy."), 3 = file not found
+            ("File does not exist.", /printGcode). HTTP status is always 200.
+            Code -2: AD5X firmware up to 3.1.4 (this spec: 1.1.7) sends it in cloud mode on every route except /notifyWanBind. Firmware 3.1.5 and later do not send it.
         message:
           type: string
     ProductResponse:

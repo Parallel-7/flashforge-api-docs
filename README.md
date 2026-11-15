@@ -21,7 +21,7 @@ All documentation lives in the **[Wiki](../../wiki)**.
 ### Core Protocols
 
 - **[HTTP REST API](../../wiki/HTTP-REST-API)** — JSON-based control interface on port 8898 (5M / AD5X)
-- **[TCP Protocol](../../wiki/TCP-Protocol)** — Text-based G/M-code interface on port 8899 (all models)
+- **[TCP Protocol](../../wiki/TCP-Protocol)** — Text-based G/M-code interface on port 8899 (all models except the Creator 5)
 - **[Discovery Protocol](../../wiki/Discovery-Protocol)** — UDP auto-discovery for finding printers on the network
 - **[Authentication](../../wiki/Authentication)** — CheckCode auth for HTTP API, open access for TCP
 
