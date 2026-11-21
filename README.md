@@ -1,3 +1,6 @@
+> **📦 This repository has moved to GitLab:** https://gitlab.com/parallel-7/flashforge-api-docs
+> This GitHub copy is no longer updated.
+
 # FlashForge API Documentation
 
 Unofficial, community-driven documentation for FlashForge 3D printer networking protocols and APIs. Covers the Adventurer 3, Adventurer 4, Adventurer 5M, and AD5X printer families.
